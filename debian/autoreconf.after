@@ -1062,7 +1062,7 @@ d41d8cd98f00b204e9800998ecf8427e  ./.pc/huawei-add-custom-conf-file.patch/src/da
 e2c4039673a268db04b3a525dcf91a7e  ./autom4te.cache/traces.1
 24fda52989bc085213d7b2b55816615b  ./autom4te.cache/output.1
 24fda52989bc085213d7b2b55816615b  ./autom4te.cache/output.0
-6d7206329646b9f11aa4765d95286151  ./autom4te.cache/requests
+9a76410407e88ee9c9d419d1ea2b3ee7  ./autom4te.cache/requests
 3df65bfd9794bf187296c8b172d42a18  ./vala/libpulse-mainloop-glib.deps
 49d2a3fc637de68e65ddb82b9cb4de96  ./vala/libpulse-mainloop-glib.vapi
 5bbfe9d379e8319f29b1582be8e1f342  ./vala/libpulse.deps
@@ -1070,3 +1070,4 @@ e2c4039673a268db04b3a525dcf91a7e  ./autom4te.cache/traces.1
 3a590639c78ff9fb7bc4e75dbf8c7b6d  ./vala/libpulse.vapi
 f027517ee60dc0f2581b14787baa17bc  ./vala/libpulse-simple.vapi
 937269a509fe16dec922858495727637  ./PulseAudioConfigVersion.cmake.in
+aa3eed22968ccb4ff2b4017db123adaa  ./debmake.sh

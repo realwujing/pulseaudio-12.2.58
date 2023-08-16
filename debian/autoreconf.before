@@ -1043,3 +1043,4 @@ d41d8cd98f00b204e9800998ecf8427e  ./.pc/huawei-add-custom-conf-file.patch/src/da
 3a590639c78ff9fb7bc4e75dbf8c7b6d  ./vala/libpulse.vapi
 f027517ee60dc0f2581b14787baa17bc  ./vala/libpulse-simple.vapi
 937269a509fe16dec922858495727637  ./PulseAudioConfigVersion.cmake.in
+aa3eed22968ccb4ff2b4017db123adaa  ./debmake.sh
