@@ -1,0 +1,25 @@
+From 1679de9a970e57734ae1ebb1a46cd6e1e080406d Mon Sep 17 00:00:00 2001
+From: Chengyi Zhao <zhaochengyi@uniontech.com>
+Date: Fri, 23 Dec 2022 14:10:03 +0800
+Subject: [PATCH] fix: set volume of Element Line Boost to ignore
+
+---
+ src/modules/alsa/mixer/paths/analog-input-linein.conf | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/modules/alsa/mixer/paths/analog-input-linein.conf b/src/modules/alsa/mixer/paths/analog-input-linein.conf
+index 574a634..ebaeb7b 100644
+--- a/src/modules/alsa/mixer/paths/analog-input-linein.conf
++++ b/src/modules/alsa/mixer/paths/analog-input-linein.conf
+@@ -40,7 +40,7 @@ override-map.2 = all-left,all-right
+ [Element Line Boost]
+ required-any = any
+ switch = mute
+-volume = merge
++volume = ignore
+ override-map.1 = all
+ override-map.2 = all-left,all-right
+ 
+-- 
+2.20.1
+

@@ -1,0 +1,59 @@
+From 2a2dbc1ddf8f6d9fd0cfc2641cd2e36b4477431e Mon Sep 17 00:00:00 2001
+From: Chengyi Zhao <zhaochengyi@uniontech.com>
+Date: Mon, 30 Aug 2021 10:34:33 +0800
+Subject: [PATCH] bluetooth: Try to reconnect HSP SCO
+
+When the SCO(Synchronous connection-oriented) connection is being used,
+if you disconnect first and then connect,the SCO connection will occasionally
+fail, and the Bluetooth error code is 42(0x2A in hexadecimal). This is usually
+because an error occurred when the SCO connection was initiated, we need to try
+to reconnect to optimize the handling of this issue. The log returned by the
+kernel is as follows:
+
+Bluetooth: sco_connect_cfm: hcon 0000000003328902 bdaddr 40:ef:4c:0c:11:f0 status 42
+Bluetooth: sco_sock_connect status is -38
+---
+ src/modules/bluetooth/backend-native.c | 17 +++++++++++++++--
+ 1 file changed, 15 insertions(+), 2 deletions(-)
+
+diff --git a/src/modules/bluetooth/backend-native.c b/src/modules/bluetooth/backend-native.c
+index 5ba7439..dec783a 100644
+--- a/src/modules/bluetooth/backend-native.c
++++ b/src/modules/bluetooth/backend-native.c
+@@ -68,6 +68,8 @@ struct transport_data {
+  * The choice seems to be a bit arbitrary -- it looks like at least channels 2, 4 and 5 also work*/
+ #define HSP_HS_DEFAULT_CHANNEL  3
+ 
++#define SCO_RECONNECTION_COUNT  3
++
+ #define PROFILE_INTROSPECT_XML                                          \
+     DBUS_INTROSPECT_1_0_XML_DOCTYPE_DECL_NODE                           \
+     "<node>"                                                            \
+@@ -185,11 +187,22 @@ fail:
+ static int sco_acquire_cb(pa_bluetooth_transport *t, bool optional, size_t *imtu, size_t *omtu) {
+     int sock;
+     socklen_t len;
++    int i;
+ 
+     if (optional)
+         sock = sco_do_accept(t);
+-    else
+-        sock = sco_do_connect(t);
++    else {
++        for (i = 0; i < SCO_RECONNECTION_COUNT; i++) {
++            sock = sco_do_connect(t);
++
++            if (sock < 0) {
++                pa_log_error("err is %s and reconnection count is %d", pa_cstrerror(errno), i);
++                pa_msleep(300);
++                continue;
++            } else
++                break;
++        }
++    }
+ 
+     if (sock < 0)
+         goto fail;
+-- 
+2.20.1
+

@@ -1,0 +1,1562 @@
+From 167dc6639d54a9f21d384b176858f2edd4198ffb Mon Sep 17 00:00:00 2001
+From: xinpeng wang <wangxinpeng@uniontech.com>
+Date: Wed, 15 Jun 2022 19:55:30 +0800
+Subject: [PATCH] [PATCH] fix huawei bluez
+
+---
+ src/Makefile.am                               |   9 +-
+ src/daemon/main.c                             |   6 +
+ src/modules/alsa/alsa-sink.c                  |  13 +
+ src/modules/alsa/alsa-sink.h                  |   6 +
+ src/modules/alsa/alsa-source.c                |  13 +
+ src/modules/alsa/alsa-source.h                |   6 +
+ src/modules/bluetooth/bluez5-util.c           |  54 ++
+ src/modules/bluetooth/bluez5-util.h           |  50 +
+ src/modules/bluetooth/module-bluez5-device.c  |  56 +-
+ .../bluetooth/module-bluez5-discover.c        |  17 +
+ src/modules/module-huawei-adapter.c           | 874 ++++++++++++++++++
+ src/pulsecore/core.c                          |  29 +
+ src/pulsecore/core.h                          |  19 +
+ src/pulsecore/protocol-native.c               |  11 +
+ src/pulsecore/protocol-native.h               |   7 +
+ 15 files changed, 1168 insertions(+), 2 deletions(-)
+ create mode 100644 src/modules/module-huawei-adapter.c
+
+diff --git a/src/Makefile.am b/src/Makefile.am
+index 2866171..cb1b1ee 100644
+--- a/src/Makefile.am
++++ b/src/Makefile.am
+@@ -1468,7 +1468,8 @@ if HAVE_BLUEZ_5
+ modlibexec_LTLIBRARIES += \
+ 		libbluez5-util.la \
+ 		module-bluez5-discover.la \
+-		module-bluez5-device.la
++		module-bluez5-device.la \
++		module-huawei-adapter.la
+ endif
+ 
+ # RAOP depends on RTP, and we don't support RTP on Windows, see comment at
+@@ -2150,6 +2151,12 @@ module_bluez5_device_la_LDFLAGS = $(MODULE_LDFLAGS)
+ module_bluez5_device_la_LIBADD = $(MODULE_LIBADD) libbluez5-util.la
+ module_bluez5_device_la_CFLAGS = $(AM_CFLAGS) -DPA_MODULE_NAME=module_bluez5_device
+ 
++
++module_huawei_adapter_la_SOURCES = modules/module-huawei-adapter.c
++module_huawei_adapter_la_LDFLAGS = $(MODULE_LDFLAGS)
++module_huawei_adapter_la_LIBADD = $(MODULE_LIBADD) $(ASOUNDLIB_LIBS) libbluez5-util.la libalsa-util.la
++module_huawei_adapter_la_CFLAGS = $(AM_CFLAGS) $(ASOUNDLIB_CFLAGS) -DPA_MODULE_NAME=module_huawei_adapter
++
+ # Apple Airtunes/RAOP
+ module_raop_sink_la_SOURCES = modules/raop/module-raop-sink.c
+ module_raop_sink_la_LDFLAGS = $(MODULE_LDFLAGS)
+diff --git a/src/daemon/main.c b/src/daemon/main.c
+index eaade7a..f9f0b7f 100644
+--- a/src/daemon/main.c
++++ b/src/daemon/main.c
+@@ -393,6 +393,7 @@ int main(int argc, char *argv[]) {
+     pa_dbus_connection *server_bus = NULL; /* The bus where we reserve org.pulseaudio.Server, either the user or the system bus. */
+     bool start_server;
+ #endif
++    pa_core_alsa_discovery *alsa_discovery = NULL;
+ 
+     pa_log_set_ident("pulseaudio");
+     pa_log_set_level(PA_LOG_NOTICE);
+@@ -1058,6 +1059,8 @@ int main(int argc, char *argv[]) {
+ #ifdef HAVE_DBUS
+     c->server_type = conf->local_server_type;
+ #endif
++    alsa_discovery = pa_alsa_discovery_get(c);
++    strcpy(alsa_discovery->vendor_name,vendor_name);
+ 
+     pa_cpu_init(&c->cpu_info);
+ 
+@@ -1176,6 +1179,9 @@ finish:
+         pa_autospawn_lock_done(false);
+     }
+ 
++    if (alsa_discovery)
++        pa_alsa_discovery_free(alsa_discovery);
++
+     if (c) {
+         /* Ensure all the modules/samples are unloaded when the core is still ref'ed,
+          * as unlink callback hooks in modules may need the core to be ref'ed */
+diff --git a/src/modules/alsa/alsa-sink.c b/src/modules/alsa/alsa-sink.c
+index 4568a19..ceecceb 100644
+--- a/src/modules/alsa/alsa-sink.c
++++ b/src/modules/alsa/alsa-sink.c
+@@ -52,6 +52,7 @@
+ #include <pulsecore/thread-mq.h>
+ #include <pulsecore/rtpoll.h>
+ #include <pulsecore/time-smoother.h>
++#include <pulsecore/shared.h>
+ 
+ #include <modules/reserve-wrap.h>
+ 
+@@ -2107,6 +2108,9 @@ pa_sink *pa_alsa_sink_new(pa_module *m, pa_modargs *ma, const char*driver, pa_ca
+     pa_alsa_profile_set *profile_set = NULL;
+     void *state = NULL;
+ 
++    pa_core_alsa_discovery *alsa_discovery = NULL;
++    pa_core_alsa_sink_new_data hook_call_data = {0};
++
+     pa_assert(m);
+     pa_assert(ma);
+ 
+@@ -2401,6 +2405,12 @@ pa_sink *pa_alsa_sink_new(pa_module *m, pa_modargs *ma, const char*driver, pa_ca
+         pa_alsa_ucm_add_ports(&data.ports, data.proplist, u->ucm_context, true, card);
+     else if (u->mixer_path_set)
+         pa_alsa_add_ports(&data, u->mixer_path_set, card);
++    
++    hook_call_data.data = &data;
++    hook_call_data.ma = ma;    
++    alsa_discovery = pa_shared_get(u->core, "pa_core_alsa_discovery");
++    pa_log("alsa hook disovery 2 %p",alsa_discovery);
++    pa_hook_fire(pa_alsa_discovery_hook(alsa_discovery, PA_CORE_ALSA_HOOK_ALSA_SINK_BEGIN_NEW),&hook_call_data);
+ 
+     u->sink = pa_sink_new(m->core, &data, PA_SINK_HARDWARE | PA_SINK_LATENCY | (u->use_tsched ? PA_SINK_DYNAMIC_LATENCY : 0) |
+                           (set_formats ? PA_SINK_SET_FORMATS : 0));
+@@ -2549,6 +2559,9 @@ pa_sink *pa_alsa_sink_new(pa_module *m, pa_modargs *ma, const char*driver, pa_ca
+             pa_sink_suspend(u->sink, true, PA_SUSPEND_UNAVAILABLE);
+     }
+ 
++    hook_call_data.sink = u->sink;
++    pa_hook_fire(pa_alsa_discovery_hook(alsa_discovery, PA_CORE_ALSA_HOOK_ALSA_SINK_AFTER_NEW),&hook_call_data);
++
+     return u->sink;
+ 
+ fail:
+diff --git a/src/modules/alsa/alsa-sink.h b/src/modules/alsa/alsa-sink.h
+index 78a2cb2..0601b9e 100644
+--- a/src/modules/alsa/alsa-sink.h
++++ b/src/modules/alsa/alsa-sink.h
+@@ -27,6 +27,12 @@
+ 
+ #include "alsa-util.h"
+ 
++typedef struct pa_core_alsa_sink_new_data {
++        pa_sink_new_data *data;
++        pa_modargs *ma;
++        pa_sink *sink;
++}pa_core_alsa_sink_new_data;
++
+ pa_sink* pa_alsa_sink_new(pa_module *m, pa_modargs *ma, const char*driver, pa_card *card, pa_alsa_mapping *mapping);
+ 
+ void pa_alsa_sink_free(pa_sink *s);
+diff --git a/src/modules/alsa/alsa-source.c b/src/modules/alsa/alsa-source.c
+index 8014bc0..b50f3cc 100644
+--- a/src/modules/alsa/alsa-source.c
++++ b/src/modules/alsa/alsa-source.c
+@@ -47,6 +47,7 @@
+ #include <pulsecore/thread-mq.h>
+ #include <pulsecore/rtpoll.h>
+ #include <pulsecore/time-smoother.h>
++#include <pulsecore/shared.h>
+ 
+ #include <modules/reserve-wrap.h>
+ 
+@@ -1801,6 +1802,9 @@ pa_source *pa_alsa_source_new(pa_module *m, pa_modargs *ma, const char*driver, p
+     pa_alsa_profile_set *profile_set = NULL;
+     void *state = NULL;
+ 
++    pa_core_alsa_discovery *alsa_discovery = NULL;
++    pa_core_alsa_source_new_data hook_call_data = {0};
++
+     pa_assert(m);
+     pa_assert(ma);
+ 
+@@ -2079,6 +2083,12 @@ pa_source *pa_alsa_source_new(pa_module *m, pa_modargs *ma, const char*driver, p
+     else if (u->mixer_path_set)
+         pa_alsa_add_ports(&data, u->mixer_path_set, card);
+ 
++    hook_call_data.data = &data;
++    hook_call_data.ma = ma;    
++    alsa_discovery = pa_shared_get(u->core, "pa_core_alsa_discovery");
++    pa_log("alsa hook disovery 3 %p",alsa_discovery);
++    pa_hook_fire(pa_alsa_discovery_hook(alsa_discovery, PA_CORE_ALSA_HOOK_ALSA_SOURCE_BEGIN_NEW),&hook_call_data);
++
+     u->source = pa_source_new(m->core, &data, PA_SOURCE_HARDWARE|PA_SOURCE_LATENCY|(u->use_tsched ? PA_SOURCE_DYNAMIC_LATENCY : 0));
+     volume_is_set = data.volume_is_set;
+     mute_is_set = data.muted_is_set;
+@@ -2185,6 +2195,9 @@ pa_source *pa_alsa_source_new(pa_module *m, pa_modargs *ma, const char*driver, p
+ 
+     if (profile_set)
+         pa_alsa_profile_set_free(profile_set);
++    
++    hook_call_data.source = u->source;
++    pa_hook_fire(pa_alsa_discovery_hook(alsa_discovery, PA_CORE_ALSA_HOOK_ALSA_SOURCE_AFTER_NEW),&hook_call_data);
+ 
+     return u->source;
+ 
+diff --git a/src/modules/alsa/alsa-source.h b/src/modules/alsa/alsa-source.h
+index ecbdfcd..72cbada 100644
+--- a/src/modules/alsa/alsa-source.h
++++ b/src/modules/alsa/alsa-source.h
+@@ -27,6 +27,12 @@
+ 
+ #include "alsa-util.h"
+ 
++typedef struct pa_core_alsa_source_new_data {
++        pa_source_new_data *data;
++        pa_modargs *ma;
++        pa_source *source;
++}pa_core_alsa_source_new_data;
++
+ pa_source* pa_alsa_source_new(pa_module *m, pa_modargs *ma, const char*driver, pa_card *card, pa_alsa_mapping *mapping);
+ 
+ void pa_alsa_source_free(pa_source *s);
+diff --git a/src/modules/bluetooth/bluez5-util.c b/src/modules/bluetooth/bluez5-util.c
+index d95c9c1..ae03331 100644
+--- a/src/modules/bluetooth/bluez5-util.c
++++ b/src/modules/bluetooth/bluez5-util.c
+@@ -96,6 +96,15 @@ struct pa_bluetooth_discovery {
+     PA_LLIST_HEAD(pa_dbus_pending, pending);
+ };
+ 
++
++struct pa_bluetooth_device_module_discovery {
++    PA_REFCNT_DECLARE;
++
++    pa_core *core;
++    pa_hook hooks[PA_BLUETOOTH_DEVICE_MODULE_HOOK_MAX];
++};
++
++
+ static pa_dbus_pending* send_and_add_to_pending(pa_bluetooth_discovery *y, DBusMessage *m,
+                                                                   DBusPendingCallNotifyFunction func, void *call_data) {
+     pa_dbus_pending *p;
+@@ -1108,6 +1117,14 @@ pa_hook* pa_bluetooth_discovery_hook(pa_bluetooth_discovery *y, pa_bluetooth_hoo
+     return &y->hooks[hook];
+ }
+ 
++
++pa_hook* pa_bluetooth_module_device_discovery_hook(pa_bluetooth_device_module_discovery *y, pa_bluetooth_device_module_hook_t hook) {
++    pa_assert(y);
++    pa_assert(PA_REFCNT_VALUE(y) > 0);
++
++    return &y->hooks[hook];
++}
++
+ static DBusHandlerResult filter_cb(DBusConnection *bus, DBusMessage *m, void *userdata) {
+     pa_bluetooth_discovery *y;
+     DBusError err;
+@@ -1588,6 +1605,43 @@ static void endpoint_done(pa_bluetooth_discovery *y, const char *endpoint) {
+     dbus_connection_unregister_object_path(pa_dbus_connection_get(y->connection), endpoint);
+ }
+ 
++
++pa_bluetooth_device_module_discovery* pa_bluetooth_device_module_discovery_ref(pa_bluetooth_device_module_discovery *y) {
++    pa_assert(y);
++    pa_assert(PA_REFCNT_VALUE(y) > 0);
++
++    PA_REFCNT_INC(y);
++
++    return y;
++}
++
++void pa_bluetooth_device_module_discovery_unref(pa_bluetooth_device_module_discovery *y) {
++    pa_assert(y);
++    pa_assert(PA_REFCNT_VALUE(y) > 0);
++
++    if (PA_REFCNT_DEC(y) > 0)
++        return;    
++
++    pa_shared_remove(y->core, "bluetooth_device_module_discovery");
++    pa_xfree(y);
++}
++
++pa_bluetooth_device_module_discovery* pa_bluetooth_device_module_discovery_get(pa_core *c) {
++    pa_bluetooth_device_module_discovery *y;
++    unsigned i;
++
++    y = pa_xnew0(pa_bluetooth_discovery, 1);
++    PA_REFCNT_INIT(y);
++    y->core = c;
++        
++    for (i = 0; i < PA_BLUETOOTH_DEVICE_MODULE_HOOK_MAX; i++)
++        pa_hook_init(&y->hooks[i], y);
++    
++    pa_shared_set(c, "bluetooth_device_module_discovery", y);    
++
++    return y;
++}
++
+ pa_bluetooth_discovery* pa_bluetooth_discovery_get(pa_core *c, int headset_backend) {
+     pa_bluetooth_discovery *y;
+     DBusError err;
+diff --git a/src/modules/bluetooth/bluez5-util.h b/src/modules/bluetooth/bluez5-util.h
+index ff172e0..fa48c93 100644
+--- a/src/modules/bluetooth/bluez5-util.h
++++ b/src/modules/bluetooth/bluez5-util.h
+@@ -63,6 +63,49 @@ typedef enum profile {
+ } pa_bluetooth_profile_t;
+ #define PA_BLUETOOTH_PROFILE_COUNT PA_BLUETOOTH_PROFILE_OFF
+ 
++
++typedef enum pa_bluetooth_device_module_hook {
++    PA_BLUETOOTH_DEVICE_MODULE_HOOK_INIT_PROFILE,
++    PA_BLUETOOTH_DEVICE_MODULE_HOOK_ADD_SINK,          /* Call data: pa_bluetooth_device_add_sink_data */
++    PA_BLUETOOTH_DEVICE_MODULE_HOOK_ADD_SOURCE,
++    PA_BLUETOOTH_DEVICE_MODULE_HOOK_SINK_STATE_CHANGED,            /* Call data: pa_bluetooth_transport */
++    PA_BLUETOOTH_DEVICE_MODULE_HOOK_SOURCE_STATE_CHANGED,  /* Call data: pa_bluetooth_transport */    
++    PA_BLUETOOTH_DEVICE_MODULE_HOOK_STOP_THREAD,
++    PA_BLUETOOTH_DEVICE_MODULE_DONE,
++    PA_BLUETOOTH_DEVICE_MODULE_HOOK_MAX
++} pa_bluetooth_device_module_hook_t;
++
++typedef struct pa_bluetooth_device_module_discovery pa_bluetooth_device_module_discovery;
++typedef struct pa_bluetooth_device_add_sink_source_data pa_bluetooth_device_add_sink_source_data;
++typedef struct pa_bluetooth_device_sink_state_changed_data pa_bluetooth_device_sink_state_changed_data;
++typedef struct pa_bluetooth_device_source_state_changed_data pa_bluetooth_device_source_state_changed_data;
++struct pa_bluetooth_device_add_sink_source_data {
++    pa_bluetooth_profile_t profile;
++    pa_module *module;
++    pa_card *card;
++    char *output_port_name;
++    char *input_port_name;
++};
++
++struct pa_bluetooth_device_sink_state_changed_data {
++    pa_bluetooth_profile_t profile;
++    pa_core *core;
++    pa_sink_state_t cur_state;
++    pa_sink_state_t new_state;
++    pa_suspend_cause_t new_suspend_cause;
++    char *s_name;
++};
++
++struct pa_bluetooth_device_source_state_changed_data {
++    pa_bluetooth_profile_t profile;
++    pa_core *core;
++    pa_source_state_t cur_state;
++    pa_source_state_t new_state;
++    pa_suspend_cause_t new_suspend_cause;
++    char *s_name;
++};
++
++
+ typedef enum pa_bluetooth_transport_state {
+     PA_BLUETOOTH_TRANSPORT_STATE_DISCONNECTED,
+     PA_BLUETOOTH_TRANSPORT_STATE_IDLE,
+@@ -182,4 +225,11 @@ pa_bluetooth_discovery* pa_bluetooth_discovery_get(pa_core *core, int headset_ba
+ pa_bluetooth_discovery* pa_bluetooth_discovery_ref(pa_bluetooth_discovery *y);
+ void pa_bluetooth_discovery_unref(pa_bluetooth_discovery *y);
+ void pa_bluetooth_discovery_set_ofono_running(pa_bluetooth_discovery *y, bool is_running);
++
++
++pa_hook* pa_bluetooth_module_device_discovery_hook(pa_bluetooth_device_module_discovery *y, pa_bluetooth_device_module_hook_t hook);
++pa_bluetooth_device_module_discovery* pa_bluetooth_device_module_discovery_get(pa_core *c);
++pa_bluetooth_device_module_discovery* pa_bluetooth_device_module_discovery_ref(pa_bluetooth_device_module_discovery *y);
++void pa_bluetooth_device_module_discovery_unref(pa_bluetooth_device_module_discovery *y);
++
+ #endif
+diff --git a/src/modules/bluetooth/module-bluez5-device.c b/src/modules/bluetooth/module-bluez5-device.c
+index fdde77b..8c7eb62 100644
+--- a/src/modules/bluetooth/module-bluez5-device.c
++++ b/src/modules/bluetooth/module-bluez5-device.c
+@@ -142,6 +142,7 @@ struct userdata {
+     pa_sample_spec decoder_sample_spec;
+     void *decoder_buffer;                        /* Codec transfer buffer */
+     size_t decoder_buffer_size;                  /* Size of the buffer */
++    pa_bluetooth_device_module_discovery *device_module_discovery;
+ };
+ 
+ typedef enum pa_bluetooth_form_factor {
+@@ -877,6 +878,7 @@ static int source_process_msg(pa_msgobject *o, int code, void *data, int64_t off
+ /* Called from the IO thread. */
+ static int source_set_state_in_io_thread_cb(pa_source *s, pa_source_state_t new_state, pa_suspend_cause_t new_suspend_cause) {
+     struct userdata *u;
++    pa_bluetooth_device_source_state_changed_data hook_call_data={0};
+ 
+     pa_assert(s);
+     pa_assert_se(u = s->userdata);
+@@ -918,6 +920,15 @@ static int source_set_state_in_io_thread_cb(pa_source *s, pa_source_state_t new_
+             break;
+     }
+ 
++    hook_call_data.core = s->core;
++    hook_call_data.cur_state = s->state;
++    hook_call_data.new_state = new_state;
++    hook_call_data.new_suspend_cause = new_suspend_cause;
++    hook_call_data.profile = u->profile;
++    hook_call_data.s_name = s->name;
++    pa_hook_fire(pa_bluetooth_module_device_discovery_hook(u->device_module_discovery, PA_BLUETOOTH_DEVICE_MODULE_HOOK_SOURCE_STATE_CHANGED),
++        &hook_call_data);
++
+     return 0;
+ }
+ 
+@@ -964,6 +975,7 @@ static void source_set_volume_cb(pa_source *s) {
+ /* Run from main thread */
+ static int add_source(struct userdata *u) {
+     pa_source_new_data data;
++    pa_bluetooth_device_add_sink_source_data hook_call_data={0};
+ 
+     pa_assert(u->transport);
+ 
+@@ -1015,6 +1027,13 @@ static int add_source(struct userdata *u) {
+         pa_source_set_set_volume_callback(u->source, source_set_volume_cb);
+         u->source->n_volume_steps = 16;
+     }
++    hook_call_data.module = u->module;    
++    hook_call_data.card = u->card;
++    hook_call_data.profile = u->profile;
++    hook_call_data.input_port_name = u->input_port_name;
++    if (PA_HOOK_OK != pa_hook_fire(pa_bluetooth_module_device_discovery_hook(u->device_module_discovery, PA_BLUETOOTH_DEVICE_MODULE_HOOK_ADD_SOURCE),
++        &hook_call_data))
++        return -1;
+     return 0;
+ }
+ 
+@@ -1064,6 +1083,7 @@ static int sink_process_msg(pa_msgobject *o, int code, void *data, int64_t offse
+ /* Called from the IO thread. */
+ static int sink_set_state_in_io_thread_cb(pa_sink *s, pa_sink_state_t new_state, pa_suspend_cause_t new_suspend_cause) {
+     struct userdata *u;
++    pa_bluetooth_device_sink_state_changed_data hook_call_data={0};
+ 
+     pa_assert(s);
+     pa_assert_se(u = s->userdata);
+@@ -1101,6 +1121,14 @@ static int sink_set_state_in_io_thread_cb(pa_sink *s, pa_sink_state_t new_state,
+         case PA_SINK_INVALID_STATE:
+             break;
+     }
++    hook_call_data.core = s->core;
++    hook_call_data.cur_state = s->state;
++    hook_call_data.new_state = new_state;
++    hook_call_data.new_suspend_cause = new_suspend_cause;
++    hook_call_data.profile = u->profile;
++    hook_call_data.s_name = s->name;
++    pa_hook_fire(pa_bluetooth_module_device_discovery_hook(u->device_module_discovery, PA_BLUETOOTH_DEVICE_MODULE_HOOK_SINK_STATE_CHANGED),
++        &hook_call_data);
+ 
+     return 0;
+ }
+@@ -1147,7 +1175,8 @@ static void sink_set_volume_cb(pa_sink *s) {
+ 
+ /* Run from main thread */
+ static int add_sink(struct userdata *u) {
+-    pa_sink_new_data data;
++    pa_sink_new_data data;    
++    pa_bluetooth_device_add_sink_source_data hook_call_data={0};
+ 
+     pa_assert(u->transport);
+ 
+@@ -1200,6 +1229,14 @@ static int add_sink(struct userdata *u) {
+         pa_sink_set_set_volume_callback(u->sink, sink_set_volume_cb);
+         u->sink->n_volume_steps = 16;
+     }
++
++    hook_call_data.module = u->module;    
++    hook_call_data.card = u->card;
++    hook_call_data.profile = u->profile;
++    hook_call_data.output_port_name = u->output_port_name;
++    if (PA_HOOK_OK!=pa_hook_fire(pa_bluetooth_module_device_discovery_hook(u->device_module_discovery, PA_BLUETOOTH_DEVICE_MODULE_HOOK_ADD_SINK),
++        &hook_call_data))
++        return -1;
+     return 0;
+ }
+ 
+@@ -1292,6 +1329,7 @@ static int init_profile(struct userdata *u) {
+         return -1;
+ 
+     pa_assert(u->transport);
++    pa_hook_fire(pa_bluetooth_module_device_discovery_hook(u->device_module_discovery, PA_BLUETOOTH_DEVICE_MODULE_HOOK_INIT_PROFILE), &u->profile); 
+ 
+     if (get_profile_direction (u->profile) & PA_DIRECTION_OUTPUT)
+         if (add_sink(u) < 0)
+@@ -1677,6 +1715,8 @@ static void stop_thread(struct userdata *u) {
+ 
+         u->a2dp_codec = NULL;
+     }
++    pa_hook_fire(pa_bluetooth_module_device_discovery_hook(u->device_module_discovery, PA_BLUETOOTH_DEVICE_MODULE_HOOK_STOP_THREAD),
++        NULL);
+ }
+ 
+ /* Run from main thread */
+@@ -2254,6 +2294,14 @@ int pa__init(pa_module* m) {
+         goto fail_free_modargs;
+     }
+ 
++    
++    if ((u->device_module_discovery = pa_shared_get(u->core, "bluetooth_device_module_discovery")))
++        pa_bluetooth_device_module_discovery_ref(u->device_module_discovery);
++    else {
++        pa_log_error("module-bluez5-discover doesn't seem to be loaded 2, refusing to load module-bluez5-device");
++        goto fail_free_modargs;
++    }
++
+     if (!(u->device = pa_bluetooth_discovery_get_device_by_path(u->discovery, path))) {
+         pa_log_error("%s is unknown", path);
+         goto fail_free_modargs;
+@@ -2358,6 +2406,12 @@ void pa__done(pa_module *m) {
+ 
+     if (u->discovery)
+         pa_bluetooth_discovery_unref(u->discovery);
++    
++    pa_hook_fire(pa_bluetooth_module_device_discovery_hook(u->device_module_discovery, PA_BLUETOOTH_DEVICE_MODULE_DONE),
++        NULL);
++    
++    if (u->device_module_discovery)
++        pa_bluetooth_device_module_discovery_unref(u->device_module_discovery);
+ 
+     pa_xfree(u->output_port_name);
+     pa_xfree(u->input_port_name);
+diff --git a/src/modules/bluetooth/module-bluez5-discover.c b/src/modules/bluetooth/module-bluez5-discover.c
+index b6c8eb0..21c78e6 100644
+--- a/src/modules/bluetooth/module-bluez5-discover.c
++++ b/src/modules/bluetooth/module-bluez5-discover.c
+@@ -51,6 +51,7 @@ struct userdata {
+     pa_hashmap *loaded_device_paths;
+     pa_hook_slot *device_connection_changed_slot;
+     pa_bluetooth_discovery *discovery;
++    pa_bluetooth_device_module_discovery *device_module_discovery;
+     bool autodetect_mtu;
+ };
+ 
+@@ -72,6 +73,16 @@ static pa_hook_result_t device_connection_changed_cb(pa_bluetooth_discovery *y,
+     if (!module_loaded && pa_bluetooth_device_any_transport_connected(d)) {
+         /* a new device has been connected */
+         pa_module *m;
++        pa_core_alsa_discovery *alsa_discovery;
++
++        alsa_discovery = pa_shared_get(u->core, "pa_core_alsa_discovery");
++        if (alsa_discovery && alsa_discovery->vendor_name[0]) {
++            char *module_name = pa_sprintf_malloc("module-%s-adapter", alsa_discovery->vendor_name);
++            pa_log_debug("Loading %s",module_name);
++            pa_module_load(&m, u->module->core, module_name, NULL);
++            pa_xfree(module_name);
++        }        
++
+         char *args = pa_sprintf_malloc("path=%s autodetect_mtu=%i", d->path, (int)u->autodetect_mtu);
+ 
+         pa_log_debug("Loading module-bluez5-device %s", args);
+@@ -138,6 +149,9 @@ int pa__init(pa_module *m) {
+     if (!(u->discovery = pa_bluetooth_discovery_get(u->core, headset_backend)))
+         goto fail;
+ 
++    if (!(u->device_module_discovery = pa_bluetooth_device_module_discovery_get(u->core)))
++        goto fail;
++
+     u->device_connection_changed_slot =
+         pa_hook_connect(pa_bluetooth_discovery_hook(u->discovery, PA_BLUETOOTH_HOOK_DEVICE_CONNECTION_CHANGED),
+                         PA_HOOK_NORMAL, (pa_hook_cb_t) device_connection_changed_cb, u);
+@@ -162,6 +176,9 @@ void pa__done(pa_module *m) {
+ 
+     if (u->device_connection_changed_slot)
+         pa_hook_slot_free(u->device_connection_changed_slot);
++    
++    if (u->device_module_discovery)
++        pa_bluetooth_device_module_discovery_unref(u->device_module_discovery);
+ 
+     if (u->discovery)
+         pa_bluetooth_discovery_unref(u->discovery);
+diff --git a/src/modules/module-huawei-adapter.c b/src/modules/module-huawei-adapter.c
+new file mode 100644
+index 0000000..e9cc056
+--- /dev/null
++++ b/src/modules/module-huawei-adapter.c
+@@ -0,0 +1,874 @@
++/***
++  This file is part of PulseAudio.
++
++  Copyright (C) 2014 Collabora Ltd. <http://www.collabora.co.uk/>
++
++  PulseAudio is free software; you can redistribute it and/or modify
++  it under the terms of the GNU Lesser General Public License as published
++  by the Free Software Foundation; either version 2.1 of the License,
++  or (at your option) any later version.
++
++  PulseAudio is distributed in the hope that it will be useful, but
++  WITHOUT ANY WARRANTY; without even the implied warranty of
++  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
++  General Public License for more details.
++
++  You should have received a copy of the GNU Lesser General Public License
++  along with PulseAudio; if not, write to the Free Software
++  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
++  USA.
++***/
++
++#ifdef HAVE_CONFIG_H
++#include <config.h>
++#endif
++
++#include <errno.h>
++
++#include <pulse/timeval.h>
++#include <pulse/utf8.h>
++
++#include <pulsecore/core-error.h>
++#include <pulsecore/core-util.h>
++#include <pulsecore/i18n.h>
++#include <pulsecore/module.h>
++#include <pulsecore/modargs.h>
++#include <pulsecore/shared.h>
++#include <pulsecore/socket-util.h>
++#include <pulsecore/time-smoother.h>
++#include <pulsecore/protocol-native.h>
++
++#include "bluetooth/bluez5-util.h"
++#include "alsa/alsa-util.h"
++#include "alsa/alsa-sink.h"
++#include "alsa/alsa-source.h"
++
++#define HAVE_CODEC_PARAM
++
++#ifdef HAVE_CODEC_PARAM // the diff on pcm number
++#define HW_SCO_SINK_ARGS(port_name)     pa_sprintf_malloc("name=%s sink_name=bt_sco_sink device=hw:0,1 profile=bt_sco rate=48000", port_name);
++#define HW_SCO_SOURCE_ARGS(port_name)   pa_sprintf_malloc("name=%s source_name=bt_sco_source device=hw:0,1 profile=bt_sco rate=48000", port_name);
++#define HW_CARD "hw:0"
++#else
++#define HW_SCO_SINK_ARGS(port_name)      pa_sprintf_malloc("name=%s sink_name=bt_sco_sink device=hw:1,1 profile=bt_sco rate=8000", port_name);
++#define HW_SCO_SOURCE_ARGS(port_name)    pa_sprintf_malloc("name=%s source_name=bt_sco_source device=hw:1,2 profile=bt_sco rate=8000", port_name);
++#endif
++
++#define MESH_PROFILE  "bt_sco"  /*bluetooth profile hsp name*/
++#define DEFAULT_PROFILE_LENTH 11
++#define LEVEL_BASIC (1<<0)
++#define LEVEL_ID (1<<2)
++
++int cset(const char * name, const char *card, const char *c, int roflag, int keep_handle);
++void pa_alsa_notify_sink_thread_state(pa_sink *sink, pa_sink_state_t state, pa_suspend_cause_t suspend_cause);
++void pa_alsa_notify_source_thread_state(pa_source *create_source, pa_source_state_t state, pa_suspend_cause_t suspend_cause);
++
++PA_MODULE_AUTHOR("Deepin sys dev team");
++PA_MODULE_DESCRIPTION("Compatible with Huawei's HiSilicon Bluetooth chip");
++PA_MODULE_VERSION(PACKAGE_VERSION);
++PA_MODULE_LOAD_ONCE(true);
++
++static const char* const valid_modargs[] = {
++    NULL,
++};
++
++static const char* const valid_sink_modargs[] = {
++    "path",
++    "autodetect_mtu",
++    "name",
++    "sink_name",
++    "device",
++    "profile",
++    "rate",
++    NULL
++};
++
++static const char* const valid_src_modargs[] = {
++    "path",
++    "autodetect_mtu",
++    "name",
++    "source_name",
++    "device",
++    "profile",
++    "rate",
++    NULL
++};
++
++struct userdata {
++    pa_module *module;
++    pa_core *core;
++
++    pa_sink *p_alsa_sink;
++    pa_source *p_alsa_source;
++
++    int first_flag;
++    pa_bluetooth_device_module_discovery *device_module_discovery;
++    pa_core_alsa_discovery *alsa_discovery;
++
++    pa_hook_slot *device_module_init_profile_slot;
++    pa_hook_slot *device_module_add_sink_slot;
++    pa_hook_slot *device_module_add_source_slot;
++    pa_hook_slot *device_module_sink_state_change_slot;
++    pa_hook_slot *device_module_source_state_change_slot;
++    pa_hook_slot *device_module_stop_thread_slot;
++    pa_hook_slot *device_module_done_slot;
++    pa_hook_slot *device_module_alsa_sink_begin_new_slot;
++    pa_hook_slot *device_module_alsa_sink_after_new_slot;
++    pa_hook_slot *device_module_alsa_source_begin_new_slot;
++    pa_hook_slot *device_module_alsa_source_after_new_slot;
++    pa_hook_slot *pa_core_native_set_default_command_slot;
++    //pa_hook_slot *pa_core_default_sink_changed_slot;
++    //pa_hook_slot *pa_core_default_source_changed_slot;
++};
++
++struct set_state_data {
++    pa_source_state_t state;
++    pa_suspend_cause_t suspend_cause;
++};
++
++void pa_alsa_notify_sink_thread_state(pa_sink *sink, pa_sink_state_t state, pa_suspend_cause_t suspend_cause)
++{
++    if (sink)
++    {
++        if (sink->set_state_in_main_thread) {
++            sink->set_state_in_main_thread(sink, state, suspend_cause);
++        }
++        if (sink->asyncmsgq) {
++          struct set_state_data data = { .state = state, .suspend_cause = suspend_cause };
++
++          (void)pa_asyncmsgq_send(sink->asyncmsgq, PA_MSGOBJECT(sink), PA_SINK_MESSAGE_SET_STATE, &data, 0, NULL);            
++        }
++        sink->state = state;
++    }    
++    return;
++}
++
++void pa_alsa_notify_source_thread_state(pa_source *create_source, pa_source_state_t state, pa_suspend_cause_t suspend_cause)
++{
++    if (create_source) {
++        if (create_source->set_state_in_main_thread) {
++            create_source->set_state_in_main_thread(create_source, state, suspend_cause);
++        }
++        if (create_source->asyncmsgq) {
++          struct set_state_data data = { .state = state, .suspend_cause = suspend_cause };
++
++          (void)pa_asyncmsgq_send(create_source->asyncmsgq, PA_MSGOBJECT(create_source), PA_SOURCE_MESSAGE_SET_STATE, &data, 0, NULL);     
++        }
++        create_source->state = state;
++    }
++    
++    return;
++}
++
++static bool is_headset_profile(pa_bluetooth_profile_t profile) {
++    return (profile == PA_BLUETOOTH_PROFILE_HEADSET_HEAD_UNIT || profile == PA_BLUETOOTH_PROFILE_HEADSET_AUDIO_GATEWAY);
++}
++
++static void show_control_id(snd_ctl_elem_id_t *id)
++{
++	char *str;
++
++	str = snd_ctl_ascii_elem_id_get(id);
++	if (str)
++		pa_log_debug("%s", str);
++	free(str);
++}
++
++static int show_control(const char *space, snd_hctl_elem_t *elem,
++			int level)
++{
++	int err;
++	unsigned int item, idx, count, *tlv;
++	snd_ctl_elem_type_t type;
++	snd_ctl_elem_id_t *id;
++	snd_ctl_elem_info_t *info;
++	snd_ctl_elem_value_t *control;
++	snd_aes_iec958_t iec958;
++	snd_ctl_elem_id_alloca(&id);
++	snd_ctl_elem_info_alloca(&info);
++	snd_ctl_elem_value_alloca(&control);
++	if ((err = snd_hctl_elem_info(elem, info)) < 0) {
++		pa_log_error("Control hw snd_hctl_elem_info error: %s", snd_strerror(err));
++		return err;
++	}
++	if (level & LEVEL_ID) {
++		snd_hctl_elem_get_id(elem, id);
++		show_control_id(id);
++		pa_log_debug("\n");
++	}
++	count = snd_ctl_elem_info_get_count(info);
++	type = snd_ctl_elem_info_get_type(info);
++
++	switch (type) {
++	case SND_CTL_ELEM_TYPE_INTEGER:
++		pa_log_debug(",min=%li,max=%li,step=%li", 
++		       snd_ctl_elem_info_get_min(info),
++		       snd_ctl_elem_info_get_max(info),
++		       snd_ctl_elem_info_get_step(info));
++		break;
++	case SND_CTL_ELEM_TYPE_INTEGER64:
++		pa_log_debug(",min=%lli,max=%lli,step=%lli",
++		       snd_ctl_elem_info_get_min64(info),
++		       snd_ctl_elem_info_get_max64(info),
++		       snd_ctl_elem_info_get_step64(info));
++		break;
++	case SND_CTL_ELEM_TYPE_ENUMERATED:
++	{
++		unsigned int items = snd_ctl_elem_info_get_items(info);
++		pa_log_debug(",items=%u\n", items);
++		for (item = 0; item < items; item++) {
++			snd_ctl_elem_info_set_item(info, item);
++			if ((err = snd_hctl_elem_info(elem, info)) < 0) {
++				pa_log_error("Control hw element info error: %s", snd_strerror(err));
++				return err;
++			}
++			pa_log_debug("%s; Item #%u '%s'", space, item, snd_ctl_elem_info_get_item_name(info));
++		}
++		break;
++	}
++	default:
++		pa_log_debug("\n");
++		break;
++	}
++
++	if (level & LEVEL_BASIC) {
++		if (!snd_ctl_elem_info_is_readable(info))
++			goto __skip_read;
++		if ((err = snd_hctl_elem_read(elem, control)) < 0) {
++			pa_log_error("Control hw:0 element read error: %s", snd_strerror(err));
++			return err;
++		}
++		
++		for (idx = 0; idx < count; idx++) {
++			if (idx > 0)
++				pa_log_debug(",");
++			switch (type) {
++			case SND_CTL_ELEM_TYPE_BOOLEAN:
++				pa_log_debug("%s", snd_ctl_elem_value_get_boolean(control, idx) ? "on" : "off");
++				break;
++			case SND_CTL_ELEM_TYPE_INTEGER:
++				pa_log_debug("%li", snd_ctl_elem_value_get_integer(control, idx));
++				break;
++			case SND_CTL_ELEM_TYPE_INTEGER64:
++				pa_log_debug("%lli", snd_ctl_elem_value_get_integer64(control, idx));
++				break;
++			case SND_CTL_ELEM_TYPE_ENUMERATED:
++				pa_log_debug("%u", snd_ctl_elem_value_get_enumerated(control, idx));
++				break;
++			case SND_CTL_ELEM_TYPE_BYTES:
++				pa_log_debug("0x%02x", snd_ctl_elem_value_get_byte(control, idx));
++				break;
++			case SND_CTL_ELEM_TYPE_IEC958:
++				snd_ctl_elem_value_get_iec958(control, &iec958);
++				pa_log_error("[AES0=0x%02x AES1=0x%02x AES2=0x%02x AES3=0x%02x]",
++				       iec958.status[0], iec958.status[1],
++				       iec958.status[2], iec958.status[3]);
++				break;
++			default:
++				pa_log_debug("?");
++				break;
++			}
++		}
++	      __skip_read:
++		if (!snd_ctl_elem_info_is_tlv_readable(info))
++			goto __skip_tlv;
++		/* skip ASoC ext bytes controls that may have huge binary TLV data */
++		if (type == SND_CTL_ELEM_TYPE_BYTES &&
++				!snd_ctl_elem_info_is_readable(info) &&
++				!snd_ctl_elem_info_is_writable(info)) {
++			pa_log_error("%s; ASoC TLV Byte control, skipping bytes dump", space);
++			goto __skip_tlv;
++		}
++
++		tlv = malloc(4096);
++		if ((err = snd_hctl_elem_tlv_read(elem, tlv, 4096)) < 0) {
++			pa_log_error("Control hw:0 element TLV read error: %s", snd_strerror(err));
++			free(tlv);
++			return err;
++		}
++		//decode_tlv(strlen(space), tlv, 4096);
++		free(tlv);
++	}
++      __skip_tlv:
++	return 0;
++}
++
++
++int cset(const char * name, const char *card, const char *c, int roflag, int keep_handle)
++{
++	int err;
++	static snd_ctl_t *handle = NULL;
++	snd_ctl_elem_info_t *info;
++	snd_ctl_elem_id_t *id;
++	snd_ctl_elem_value_t *control;
++	snd_ctl_elem_info_alloca(&info);
++	snd_ctl_elem_id_alloca(&id);
++	snd_ctl_elem_value_alloca(&control);
++
++    pa_log_debug("cset name[%s]card[%s]c[%s]", name, card, c);
++	if (snd_ctl_ascii_elem_id_parse(id, name)) {
++		pa_log_error("Wrong control identifier: %s", name);
++		return -1;
++	}
++
++	if (handle == NULL &&
++	    (err = snd_ctl_open(&handle, card, 0)) < 0) {
++		pa_log_error("Control %s open error: %s", card, snd_strerror(err));
++		return err;
++	}
++ 
++	snd_ctl_elem_info_set_id(info, id);
++   
++	if ((err = snd_ctl_elem_info(handle, info)) < 0) {
++		//if (ignore_error)
++			//return 0;
++		pa_log_error("Cannot find the given element from control %s", card);
++		if (! keep_handle) {
++			snd_ctl_close(handle);
++			handle = NULL;
++		}
++		return err;
++	}
++  
++	snd_ctl_elem_info_get_id(info, id);
++	if (!roflag) {
++        snd_ctl_elem_value_set_id(control, id);
++     
++		if ((err = snd_ctl_elem_read(handle, control)) < 0) {
++			//if (ignore_error)
++				//return 0;
++			pa_log_error("Cannot read the given element from control %s", card);
++			if (! keep_handle) {
++				snd_ctl_close(handle);
++				handle = NULL;
++			}
++			return err;
++		}
++        err = snd_ctl_ascii_value_parse(handle, control, info, c);
++		if (err < 0) {
++ 			//if (!ignore_error)
++				//error("Control %s parse error: %s\n", card, snd_strerror(err));
++			if (!keep_handle) {
++				snd_ctl_close(handle);
++				handle = NULL;
++			}
++			//return ignore_error ? 0 : err;
++            return err;
++		}
++        
++		if ((err = snd_ctl_elem_write(handle, control)) < 0) {
++			//if (!ignore_error)
++				//error("Control %s element write error: %s\n", card, snd_strerror(err));
++			if (!keep_handle) {
++				snd_ctl_close(handle);
++				handle = NULL;
++			}
++			//return ignore_error ? 0 : err;
++             return err;
++		}
++	}
++	if (! keep_handle) {
++		snd_ctl_close(handle);
++		handle = NULL;
++	}
++	{
++		snd_hctl_t *hctl;
++		snd_hctl_elem_t *elem;
++		if ((err = snd_hctl_open(&hctl, card, 0)) < 0) {
++			pa_log_error("Control %s open error: %s", card, snd_strerror(err));
++			return err;
++		}
++   
++		if ((err = snd_hctl_load(hctl)) < 0) {
++			pa_log_error("Control %s load error: %s", card, snd_strerror(err));
++			return err;
++		}
++      
++		elem = snd_hctl_find_elem(hctl, id);
++		if (elem)
++			show_control("  ", elem, LEVEL_BASIC | LEVEL_ID);
++		else
++			pa_log_error("Could not find the specified element");
++		snd_hctl_close(hctl);
++	}
++	return 0;
++}
++
++static pa_hook_result_t device_module_init_profile_cb(pa_bluetooth_device_module_discovery *y, pa_bluetooth_profile_t *d, struct userdata *u)
++{
++    pa_assert(d);
++    pa_log_debug("enter hook %s profile %d",__func__,*d);
++    #ifdef HAVE_CODEC_PARAM
++    if (is_headset_profile(*d))
++    {                
++        cset("name=Bt Uplink Switch", HW_CARD, "0", 0, 0);
++        cset("name=Bt Playback Switch", HW_CARD, "0", 0, 0);        
++    }
++    #endif    
++    return PA_HOOK_OK;
++}
++
++/* Run from main thread */
++static pa_hook_result_t device_module_add_sink_cb(pa_bluetooth_device_module_discovery *y, pa_bluetooth_device_add_sink_source_data *d, struct userdata *u) {
++    pa_modargs *ma = NULL;
++    const char *args = NULL;
++
++    pa_assert(d);
++    pa_assert(u);
++    pa_assert(!u->p_alsa_sink);
++    pa_log_debug("enter hook %s",__func__);
++
++    if (!is_headset_profile(d->profile))
++        return PA_HOOK_OK;
++
++    args = HW_SCO_SINK_ARGS(d->output_port_name);
++
++    // create alsa sink
++    pa_alsa_refcnt_inc();
++    if (!(ma = pa_modargs_new(args, valid_sink_modargs))) {
++        pa_log_error("parse args fail");
++        return PA_HOOK_STOP;
++    }
++    
++    if (!(u->p_alsa_sink = pa_alsa_sink_new(d->module, ma, __FILE__, d->card, NULL))) {
++        pa_log_error("alsa_sink_new fail");    
++        goto fail;
++    }
++    pa_modargs_free(ma);
++    return PA_HOOK_OK;
++
++fail:
++    pa_modargs_free(ma);
++    return PA_HOOK_STOP;
++}
++
++static pa_hook_result_t device_module_add_source_cb(pa_bluetooth_device_module_discovery *y, pa_bluetooth_device_add_sink_source_data *d, struct userdata *u) {
++    pa_modargs *ma = NULL;
++    const char *args = NULL;
++
++    pa_assert(d);
++    pa_assert(u);
++    pa_assert(!u->p_alsa_source);
++    pa_log_debug("enter hook %s",__func__);
++
++    if (!is_headset_profile(d->profile))
++        return PA_HOOK_OK;
++
++    args = HW_SCO_SOURCE_ARGS(d->input_port_name);
++
++    // create alsa sink
++    pa_alsa_refcnt_inc();
++    if (!(ma = pa_modargs_new(args, valid_src_modargs))) {
++        pa_log_error("parse args fail");
++        return PA_HOOK_STOP;
++    }
++    
++    if (!(u->p_alsa_source = pa_alsa_source_new(d->module, ma, __FILE__, d->card, NULL))) {
++        pa_log_error("alsa_source_new fail");    
++        goto fail;
++    }
++    pa_modargs_free(ma);
++    return PA_HOOK_OK;
++
++fail:
++    pa_modargs_free(ma);
++    return PA_HOOK_STOP;
++}
++
++/*hook for sink_set_state_in_io_thread_cb*/
++static pa_hook_result_t 
++device_module_sink_state_change_cb(pa_bluetooth_device_module_discovery *y, pa_bluetooth_device_sink_state_changed_data *d, struct userdata *u)
++{
++    pa_assert(d);
++    pa_assert(u);
++    pa_log_debug("enter hook %s",__func__);    
++    pa_log_debug("profile %d cur state:%d, new state:%d, default sink:%s, configured sink:%s", 
++                 d->profile, d->cur_state, d->new_state,
++                 u->core->default_sink->name ? u->core->default_sink->name : "",
++                 u->core->configured_default_sink ? u->core->configured_default_sink : ""); 
++
++    if (is_headset_profile(d->profile)) {
++        pa_assert(u->p_alsa_sink);
++        if (d->new_state == PA_SINK_RUNNING) {
++            pa_log_debug("set default sink %s",u->p_alsa_sink->name);
++            pa_core_set_configured_default_sink(d->core, u->p_alsa_sink->name);
++            pa_alsa_notify_sink_thread_state(u->p_alsa_sink, PA_SINK_SUSPENDED, PA_SUSPEND_IDLE);
++            pa_alsa_notify_sink_thread_state(u->p_alsa_sink, PA_SINK_RUNNING, 0);
++        }
++    }
++    return PA_HOOK_OK;
++}
++
++/*hook for source_set_state_in_io_thread_cb*/
++static pa_hook_result_t 
++device_module_source_state_change_cb(pa_bluetooth_device_module_discovery *y, pa_bluetooth_device_source_state_changed_data *d, struct userdata *u)
++{
++    //static int xxx_flag = 0; /*first start sink device*/
++    pa_assert(d);
++    pa_assert(u); 
++    pa_log_debug("enter hook %s",__func__);
++
++    pa_log_debug("profile %d cur state:%d, new state:%d, suspend_cause %d flag %d default source:%s, configured source:%s source name:%s",
++                 d->profile, d->cur_state, d->new_state,
++                 d->new_suspend_cause, u->first_flag,
++                 u->core->default_source->name ? u->core->default_source->name : "",
++                 u->core->configured_default_source ? u->core->configured_default_source : "",d->s_name);
++    
++    if (is_headset_profile(d->profile))  {
++        pa_assert(u->p_alsa_sink);
++        pa_assert(u->p_alsa_source);
++
++        if (d->new_suspend_cause == PA_SUSPEND_USER) {
++            if (d->cur_state == PA_SOURCE_RUNNING && d->new_state == PA_SOURCE_RUNNING) {
++                pa_log_debug("in %s set default source1 %s",__func__,u->p_alsa_source->name);
++                pa_core_set_configured_default_source(d->core, u->p_alsa_source->name);
++            }
++        } else {
++            if (d->new_state == PA_SOURCE_RUNNING)
++            {
++                pa_log_debug("in %s set default source2 %s",__func__,u->p_alsa_source->name);
++                pa_core_set_configured_default_source(d->core, u->p_alsa_source->name);
++                pa_alsa_notify_source_thread_state(u->p_alsa_source, PA_SOURCE_SUSPENDED, PA_SUSPEND_IDLE);
++                pa_alsa_notify_source_thread_state(u->p_alsa_source, PA_SOURCE_RUNNING, 0);
++
++                #ifdef HAVE_CODEC_PARAM
++                cset("name=Bt Uplink Switch", HW_CARD, "1", 0, 0);
++                #endif
++
++                if (!u->first_flag) {
++                    pa_log_debug("in %s set default sink %s",__func__,u->p_alsa_sink->name);
++                    pa_core_set_configured_default_sink(d->core, u->p_alsa_sink->name);
++                    pa_alsa_notify_sink_thread_state(u->p_alsa_sink, PA_SINK_SUSPENDED, PA_SUSPEND_IDLE);
++                    pa_alsa_notify_sink_thread_state(u->p_alsa_sink, PA_SINK_RUNNING, 0);
++
++                    #ifdef HAVE_CODEC_PARAM
++                    cset("name=Bt Playback Switch", HW_CARD, "1", 0, 0);
++                    #endif
++
++                    u->first_flag = 1;
++                }
++            }
++            else
++            {
++                if (d->new_state == PA_SOURCE_IDLE && (d->cur_state == PA_SOURCE_RUNNING || d->cur_state == PA_SOURCE_INIT)) {
++                    if(strcmp(d->core->default_source->name, u->p_alsa_source->name) == 0)
++                    {
++                        #ifdef HAVE_CODEC_PARAM
++                        cset("name=Bt Uplink Switch", HW_CARD, "0", 0, 0);
++                        #endif
++                        pa_log_debug("in %s set default source3 %s",__func__,d->s_name);
++                        pa_core_set_configured_default_source(d->core, d->s_name);
++                    }
++                } else {
++                    u->first_flag = 0;
++                }
++            }
++        }
++    }
++    return PA_HOOK_OK;
++}
++
++static pa_hook_result_t 
++device_module_stop_thread_cb(pa_bluetooth_device_module_discovery *y, void *d, struct userdata *u)
++{
++    pa_assert(u);
++    pa_log_debug("enter hook %s",__func__);
++    if (u->p_alsa_sink)
++    {
++        #ifdef HAVE_CODEC_PARAM
++        cset("name=Bt Playback Switch", HW_CARD, "0", 0, 0);
++        #endif
++        pa_alsa_sink_free(u->p_alsa_sink);
++        u->p_alsa_sink = NULL;
++        pa_alsa_refcnt_dec();
++    }
++    if (u->p_alsa_source)
++    {
++        #ifdef HAVE_CODEC_PARAM
++        cset("name=Bt Uplink Switch", HW_CARD, "0", 0, 0);
++        #endif
++        pa_alsa_source_free(u->p_alsa_source);
++        u->p_alsa_source = NULL;
++        pa_alsa_refcnt_dec();
++    }
++    return PA_HOOK_OK;
++}
++
++static pa_hook_result_t 
++device_module_done_cb(pa_bluetooth_device_module_discovery *y, void *d, struct userdata *u)
++{
++    pa_assert(u);    
++
++    pa_log_debug("Unloading huawei_adapter module");
++    pa_module_unload(u->module, true);
++
++    return PA_HOOK_OK;
++}
++
++static pa_hook_result_t 
++pa_core_alsa_sink_begin_new_cb(pa_core *y, pa_core_alsa_sink_new_data *d, struct userdata *u)
++{
++    const char *port_name = NULL;
++    const char *profile_name = NULL;
++    pa_device_port *port;
++    pa_sink_new_data *sink_new_data = NULL;
++
++    pa_assert(d);
++    pa_assert(d->ma);
++    pa_assert(d->data);
++    pa_log_debug("enter hook %s",__func__);
++    
++    
++    sink_new_data = d->data;
++
++    port_name = pa_modargs_get_value(d->ma, "name", NULL);
++    profile_name = pa_modargs_get_value(d->ma, "profile", NULL);
++
++    //connect_ports(d->data, port_name, profile_name);
++    if (!sink_new_data->card || !port_name || !profile_name) 
++        return PA_HOOK_OK; 
++
++    pa_log_debug("hook input profile = %s, port_name=%s", profile_name, port_name);
++   
++    if (!strcmp(profile_name, MESH_PROFILE)) {
++		pa_assert_se(port = pa_hashmap_get(sink_new_data->card->ports, port_name));
++		pa_assert_se(pa_hashmap_put(sink_new_data->ports, port_name, port) >= 0);
++		pa_device_port_ref(port);
++    }
++    return PA_HOOK_OK; 
++}
++
++static pa_hook_result_t 
++pa_core_alsa_sink_after_new_cb(pa_core *y, pa_core_alsa_sink_new_data *d, struct userdata *u)
++{
++    const char *profile_name = NULL;
++    pa_sink_new_data *sink_new_data = NULL;
++    pa_assert(d);
++    pa_assert(d->data);
++    pa_assert(d->sink);
++    pa_log_debug("enter hook %s",__func__);
++    
++    sink_new_data = d->data;
++
++    profile_name = pa_modargs_get_value(d->ma, "profile", NULL);
++    pa_log_debug("hook profile = %s", profile_name);
++
++    if ((sink_new_data->card)&&(profile_name)&&(!strcmp(profile_name, MESH_PROFILE)))
++    {
++        d->sink->priority += 100;
++    }
++    return PA_HOOK_OK;
++}
++
++static pa_hook_result_t 
++pa_core_alsa_source_begin_new_cb(pa_core *y, pa_core_alsa_source_new_data *d, struct userdata *u)
++{
++    const char *port_name = NULL;
++    const char *profile_name = NULL;
++    pa_device_port *port = NULL;
++	pa_source_new_data *source_new_data = NULL;
++
++    pa_assert(d);
++    pa_assert(d->ma);
++    pa_assert(d->data);
++    pa_log_debug("enter hook %s",__func__);
++    
++	source_new_data = d->data;
++
++    port_name = pa_modargs_get_value(d->ma, "name", NULL);
++    profile_name = pa_modargs_get_value(d->ma, "profile", NULL);
++
++    if (!source_new_data->card || !port_name || !profile_name)
++        return PA_HOOK_OK;
++
++    pa_log_debug("hook output profile = %s, port_name=%s", profile_name, port_name);
++    if (!strcmp(profile_name, MESH_PROFILE))
++    {
++        pa_assert_se(port = pa_hashmap_get(source_new_data->card->ports, port_name));
++        pa_assert_se(pa_hashmap_put(source_new_data->ports, port_name, port) >= 0);
++        pa_device_port_ref(port);
++    }
++    return PA_HOOK_OK;
++}
++
++static pa_hook_result_t 
++pa_core_alsa_source_after_new_cb(pa_core *y, pa_core_alsa_source_new_data *d, struct userdata *u)
++{
++    const char *profile_name = NULL;
++    pa_source_new_data *source_new_data = NULL;
++    pa_assert(d);
++    pa_assert(d->data);
++    pa_assert(d->source);
++    pa_log_debug("enter hook %s",__func__);
++
++    source_new_data = d->data;
++
++    profile_name = pa_modargs_get_value(d->ma, "profile", NULL);
++    pa_log_debug("hook profile = %s", profile_name);
++
++    if ((source_new_data->card)&&(profile_name)&&(!strcmp(profile_name, MESH_PROFILE)))
++    {
++        d->source->priority += 100;
++    }
++    return PA_HOOK_OK;
++}
++
++static pa_hook_result_t 
++pa_core_command_set_default_cb(pa_core *y, pa_native_command_set_default_data *d, struct userdata *u) {
++    pa_assert(d);
++    pa_assert(y);
++    pa_assert(u);
++    pa_log_debug("enter hook %s",__func__);
++
++    if (d->command == PA_COMMAND_SET_DEFAULT_SINK) {
++        pa_assert(d->sink);
++        pa_log_debug("in %s set default sink %s",__func__,d->sink->name);
++        if (d->sink->name && strlen(d->sink->name) >= DEFAULT_PROFILE_LENTH && 
++            (strncmp(d->sink->name, "bluez_sink.", DEFAULT_PROFILE_LENTH) == 0||strcmp(d->sink->name, "bt_sco_sink") == 0)) {
++            pa_log_debug("amixer set on success");
++            cset("name=Bt Playback Switch", HW_CARD, "1", 0, 0);
++        } else {
++            pa_log_debug("amixer set off success");
++            cset("name=Bt Playback Switch", HW_CARD, "0", 0, 0);
++        }
++    } else {
++        pa_assert(d->source);
++        pa_log_debug("set default source %s",d->source->name);
++        if (d->source->name && strlen(d->source->name) >= DEFAULT_PROFILE_LENTH && strncmp(d->source->name, "bluez_source.", DEFAULT_PROFILE_LENTH) == 0) {         
++            if (d->source->set_state_in_io_thread) {
++                d->source->set_state_in_io_thread(d->source, PA_SOURCE_RUNNING, PA_SUSPEND_USER);      
++            }
++        }   
++    }
++    return PA_HOOK_OK;
++}
++
++int pa__init(pa_module*m) {
++    pa_modargs *ma = NULL;
++    struct userdata *u = NULL;
++
++    pa_assert(m);
++
++    if (!(ma = pa_modargs_new(m->argument, valid_modargs))) {
++        pa_log("Failed to parse module arguments");
++        return -1;
++    }
++
++    m->userdata = u = pa_xnew(struct userdata, 1);
++    memset(u,0,sizeof(*u));
++    u->module = m;
++    u->core = m->core;
++
++    if ((u->device_module_discovery = pa_shared_get(u->core, "bluetooth_device_module_discovery")))
++        pa_bluetooth_device_module_discovery_ref(u->device_module_discovery);
++    else {
++        pa_log_error("module-bluez5-discover doesn't seem to be loaded 2, refusing to load module-huawei-adapter");
++        goto fail_free_modargs;
++    }
++    
++    u->alsa_discovery = pa_shared_get(u->core, "pa_core_alsa_discovery");
++    
++    u->device_module_init_profile_slot = 
++         pa_hook_connect(pa_bluetooth_module_device_discovery_hook(u->device_module_discovery, PA_BLUETOOTH_DEVICE_MODULE_HOOK_INIT_PROFILE),
++                        PA_HOOK_NORMAL, (pa_hook_cb_t) device_module_init_profile_cb, u);
++    u->device_module_add_sink_slot =
++        pa_hook_connect(pa_bluetooth_module_device_discovery_hook(u->device_module_discovery, PA_BLUETOOTH_DEVICE_MODULE_HOOK_ADD_SINK),
++                        PA_HOOK_NORMAL, (pa_hook_cb_t) device_module_add_sink_cb, u);
++    u->device_module_add_source_slot =
++        pa_hook_connect(pa_bluetooth_module_device_discovery_hook(u->device_module_discovery, PA_BLUETOOTH_DEVICE_MODULE_HOOK_ADD_SOURCE),
++                        PA_HOOK_NORMAL, (pa_hook_cb_t) device_module_add_source_cb, u);
++    u->device_module_sink_state_change_slot =
++        pa_hook_connect(pa_bluetooth_module_device_discovery_hook(u->device_module_discovery, PA_BLUETOOTH_DEVICE_MODULE_HOOK_SINK_STATE_CHANGED),
++                        PA_HOOK_NORMAL, (pa_hook_cb_t) device_module_sink_state_change_cb, u);
++    u->device_module_source_state_change_slot =
++        pa_hook_connect(pa_bluetooth_module_device_discovery_hook(u->device_module_discovery, PA_BLUETOOTH_DEVICE_MODULE_HOOK_SOURCE_STATE_CHANGED),
++                        PA_HOOK_NORMAL, (pa_hook_cb_t) device_module_source_state_change_cb, u);
++    u->device_module_stop_thread_slot =
++        pa_hook_connect(pa_bluetooth_module_device_discovery_hook(u->device_module_discovery, PA_BLUETOOTH_DEVICE_MODULE_HOOK_STOP_THREAD),
++                        PA_HOOK_NORMAL, (pa_hook_cb_t) device_module_stop_thread_cb, u);
++    u->device_module_done_slot =
++        pa_hook_connect(pa_bluetooth_module_device_discovery_hook(u->device_module_discovery, PA_BLUETOOTH_DEVICE_MODULE_DONE),
++                        PA_HOOK_NORMAL, (pa_hook_cb_t) device_module_done_cb, u);
++
++    u->device_module_alsa_sink_begin_new_slot =
++        pa_hook_connect(pa_alsa_discovery_hook(u->alsa_discovery, PA_CORE_ALSA_HOOK_ALSA_SINK_BEGIN_NEW),
++                        PA_HOOK_NORMAL, (pa_hook_cb_t) pa_core_alsa_sink_begin_new_cb, u);
++    u->device_module_alsa_sink_after_new_slot =
++        pa_hook_connect(pa_alsa_discovery_hook(u->alsa_discovery, PA_CORE_ALSA_HOOK_ALSA_SINK_AFTER_NEW),
++                        PA_HOOK_NORMAL, (pa_hook_cb_t) pa_core_alsa_sink_after_new_cb, u);
++    u->device_module_alsa_source_begin_new_slot =
++        pa_hook_connect(pa_alsa_discovery_hook(u->alsa_discovery, PA_CORE_ALSA_HOOK_ALSA_SOURCE_BEGIN_NEW),
++                        PA_HOOK_NORMAL, (pa_hook_cb_t) pa_core_alsa_source_begin_new_cb, u);
++    u->device_module_alsa_source_after_new_slot =
++        pa_hook_connect(pa_alsa_discovery_hook(u->alsa_discovery, PA_CORE_ALSA_HOOK_ALSA_SOURCE_AFTER_NEW),
++                        PA_HOOK_NORMAL, (pa_hook_cb_t) pa_core_alsa_source_after_new_cb, u);
++    u->pa_core_native_set_default_command_slot =
++        pa_hook_connect(pa_alsa_discovery_hook(u->alsa_discovery, PA_CORE_NATIVE_COMMAND_SET_DEFAULT),
++                        PA_HOOK_NORMAL, (pa_hook_cb_t) pa_core_command_set_default_cb, u);                      
++    
++
++    pa_log("module-huawei-adapter load ok!!!");
++
++    pa_modargs_free(ma);
++    return 0;
++
++fail_free_modargs:
++
++    if (ma)
++        pa_modargs_free(ma);
++
++    pa__done(m);
++
++    return -1;
++}
++
++
++void pa__done(pa_module*m) {
++    struct userdata *u;
++
++    pa_assert(m);
++
++    if (!(u = m->userdata))
++        return;
++    
++    if (u->device_module_init_profile_slot)
++        pa_hook_slot_free(u->device_module_init_profile_slot);
++
++    if (u->device_module_add_sink_slot)
++        pa_hook_slot_free(u->device_module_add_sink_slot);
++
++    if (u->device_module_add_source_slot)
++        pa_hook_slot_free(u->device_module_add_source_slot);
++
++    if (u->device_module_sink_state_change_slot)
++        pa_hook_slot_free(u->device_module_sink_state_change_slot);
++
++    if (u->device_module_source_state_change_slot)
++        pa_hook_slot_free(u->device_module_source_state_change_slot);
++
++    if (u->device_module_stop_thread_slot)
++        pa_hook_slot_free(u->device_module_stop_thread_slot);
++    
++    if (u->device_module_done_slot)
++        pa_hook_slot_free(u->device_module_done_slot);
++    
++    if (u->device_module_alsa_sink_begin_new_slot)
++        pa_hook_slot_free(u->device_module_alsa_sink_begin_new_slot);
++    
++    if (u->device_module_alsa_sink_after_new_slot)
++        pa_hook_slot_free(u->device_module_alsa_sink_after_new_slot);
++
++    if (u->device_module_alsa_source_begin_new_slot)
++        pa_hook_slot_free(u->device_module_alsa_source_begin_new_slot);
++    
++    if (u->device_module_alsa_source_after_new_slot)
++        pa_hook_slot_free(u->device_module_alsa_source_after_new_slot);
++    
++    if (u->pa_core_native_set_default_command_slot)
++        pa_hook_slot_free(u->pa_core_native_set_default_command_slot);
++
++    if (u->device_module_discovery)
++        pa_bluetooth_device_module_discovery_unref(u->device_module_discovery);    
++
++    pa_xfree(u);
++}
+\ No newline at end of file
+diff --git a/src/pulsecore/core.c b/src/pulsecore/core.c
+index 79abbc0..f9daa6f 100644
+--- a/src/pulsecore/core.c
++++ b/src/pulsecore/core.c
+@@ -543,3 +543,32 @@ const char *pa_suspend_cause_to_string(pa_suspend_cause_t cause_bitfield, char b
+ 
+     return buf;
+ }
++
++
++pa_hook* pa_alsa_discovery_hook(pa_core_alsa_discovery *y, pa_core_alsa_hook_t hook) {
++    pa_assert(y);
++
++    return &y->hooks[hook];
++}
++
++void pa_alsa_discovery_free(pa_core_alsa_discovery *y) {
++    pa_assert(y);
++    
++    pa_shared_remove(y->core, "pa_core_alsa_discovery");
++    pa_xfree(y);
++}
++
++pa_core_alsa_discovery* pa_alsa_discovery_get(pa_core *c) {
++    pa_core_alsa_discovery *y;
++    unsigned i;
++
++    y = pa_xnew0(pa_core_alsa_discovery, 1);
++    y->core = c;
++            
++    for (i = 0; i < PA_CORE_ALSA_HOOK_MAX; i++)
++        pa_hook_init(&y->hooks[i], y);
++    
++    pa_shared_set(c, "pa_core_alsa_discovery", y);
++
++    return y;
++}
+\ No newline at end of file
+diff --git a/src/pulsecore/core.h b/src/pulsecore/core.h
+index 213964c..5a78b5c 100644
+--- a/src/pulsecore/core.h
++++ b/src/pulsecore/core.h
+@@ -276,4 +276,23 @@ static const size_t PA_SUSPEND_CAUSE_TO_STRING_BUF_SIZE =
+  * provided buffer. The same buffer is the return value of this function. */
+ const char *pa_suspend_cause_to_string(pa_suspend_cause_t cause, char buf[PA_SUSPEND_CAUSE_TO_STRING_BUF_SIZE]);
+ 
++
++typedef enum pa_core_alsa_hook {    
++    PA_CORE_ALSA_HOOK_ALSA_SINK_BEGIN_NEW,   
++    PA_CORE_ALSA_HOOK_ALSA_SINK_AFTER_NEW,
++    PA_CORE_ALSA_HOOK_ALSA_SOURCE_BEGIN_NEW,
++    PA_CORE_ALSA_HOOK_ALSA_SOURCE_AFTER_NEW,
++    PA_CORE_NATIVE_COMMAND_SET_DEFAULT,
++    PA_CORE_ALSA_HOOK_MAX
++} pa_core_alsa_hook_t;
++
++typedef struct pa_core_alsa_discovery pa_core_alsa_discovery;
++struct pa_core_alsa_discovery {
++    pa_core *core;
++    char vendor_name[32];
++    pa_hook hooks[PA_CORE_ALSA_HOOK_MAX];
++};
++pa_core_alsa_discovery* pa_alsa_discovery_get(pa_core *c);
++void pa_alsa_discovery_free(pa_core_alsa_discovery *y);
++pa_hook* pa_alsa_discovery_hook(pa_core_alsa_discovery *y, pa_core_alsa_hook_t hook);
+ #endif
+diff --git a/src/pulsecore/protocol-native.c b/src/pulsecore/protocol-native.c
+index 2d45a4c..8370c6f 100644
+--- a/src/pulsecore/protocol-native.c
++++ b/src/pulsecore/protocol-native.c
+@@ -4327,6 +4327,8 @@ static void command_remove_proplist(pa_pdispatch *pd, uint32_t command, uint32_t
+ static void command_set_default_sink_or_source(pa_pdispatch *pd, uint32_t command, uint32_t tag, pa_tagstruct *t, void *userdata) {
+     pa_native_connection *c = PA_NATIVE_CONNECTION(userdata);
+     const char *s;
++    pa_core_alsa_discovery *alsa_discovery = NULL;
++    pa_native_command_set_default_data hook_call_data = {0};
+ 
+     pa_native_connection_assert_ref(c);
+     pa_assert(t);
+@@ -4340,6 +4342,9 @@ static void command_set_default_sink_or_source(pa_pdispatch *pd, uint32_t comman
+     CHECK_VALIDITY(c->pstream, c->authorized, tag, PA_ERR_ACCESS);
+     CHECK_VALIDITY(c->pstream, !s || pa_namereg_is_valid_name(s), tag, PA_ERR_INVALID);
+ 
++    alsa_discovery = pa_shared_get(c->protocol->core, "pa_core_alsa_discovery");
++    hook_call_data.command = command;    
++
+     if (command == PA_COMMAND_SET_DEFAULT_SOURCE) {
+         pa_source *source;
+ 
+@@ -4347,6 +4352,9 @@ static void command_set_default_sink_or_source(pa_pdispatch *pd, uint32_t comman
+         CHECK_VALIDITY(c->pstream, source, tag, PA_ERR_NOENTITY);
+ 
+         pa_core_set_configured_default_source(c->protocol->core, source->name);
++
++        hook_call_data.source = source;              
++        pa_hook_fire(pa_alsa_discovery_hook(alsa_discovery, PA_CORE_NATIVE_COMMAND_SET_DEFAULT),&hook_call_data);
+     } else {
+         pa_sink *sink;
+         pa_assert(command == PA_COMMAND_SET_DEFAULT_SINK);
+@@ -4355,6 +4363,9 @@ static void command_set_default_sink_or_source(pa_pdispatch *pd, uint32_t comman
+         CHECK_VALIDITY(c->pstream, sink, tag, PA_ERR_NOENTITY);
+ 
+         pa_core_set_configured_default_sink(c->protocol->core, sink->name);
++
++        hook_call_data.sink = sink;              
++        pa_hook_fire(pa_alsa_discovery_hook(alsa_discovery, PA_CORE_NATIVE_COMMAND_SET_DEFAULT),&hook_call_data);
+     }
+ 
+     pa_pstream_send_simple_ack(c->pstream, tag);
+diff --git a/src/pulsecore/protocol-native.h b/src/pulsecore/protocol-native.h
+index 0347fdf..5ccc511 100644
+--- a/src/pulsecore/protocol-native.h
++++ b/src/pulsecore/protocol-native.h
+@@ -55,6 +55,13 @@ typedef enum pa_native_hook {
+     PA_NATIVE_HOOK_MAX
+ } pa_native_hook_t;
+ 
++typedef struct pa_native_command_set_default_data pa_native_command_set_default_data;
++struct pa_native_command_set_default_data {
++    pa_sink *sink;
++    pa_source *source;
++    uint32_t command;
++};
++
+ pa_native_protocol* pa_native_protocol_get(pa_core *core);
+ pa_native_protocol* pa_native_protocol_ref(pa_native_protocol *p);
+ void pa_native_protocol_unref(pa_native_protocol *p);
+-- 
+2.20.1
+

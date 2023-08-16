@@ -1,0 +1,27 @@
+Description: analog-input-front-mic add Jack Front Line Out Front
+
+---
+The information above should follow the Patch Tagging Guidelines, please
+checkout http://dep.debian.net/deps/dep3/ to learn about the format. Here
+are templates for supplementary fields that you might want to add:
+
+Origin: <vendor|upstream|other>, <url of original patch>
+Bug: https://pms.deepin.com/bug-view-12090.html
+Bug-Debian: https://bugs.debian.org/<bugnumber>
+Bug-Ubuntu: https://launchpad.net/bugs/<bugnumber>
+Forwarded: <no|not-needed|url proving that it has been forwarded>
+Reviewed-By: <songwentai@uniontech.com>
+Last-Update: 2020-03-23
+
+--- pulseaudio-12.2.5+c1.orig/src/modules/alsa/mixer/paths/analog-input-front-mic.conf
++++ pulseaudio-12.2.5+c1/src/modules/alsa/mixer/paths/analog-input-front-mic.conf
+@@ -29,6 +29,9 @@ required-any = any
+ state.plugged = unknown
+ state.unplugged = unknown
+ 
++[Jack Front Line Out Front]
++required-any = any
++
+ [Element Capture]
+ switch = mute
+ volume = merge

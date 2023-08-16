@@ -1,0 +1,136 @@
+From 275bec8cba3ffe2386be6f53b935f47eaf7cbc3a Mon Sep 17 00:00:00 2001
+From: Chengyi Zhao <zhaochengyi@uniontech.com>
+Date: Wed, 1 Dec 2021 15:40:56 +0800
+Subject: [PATCH] alsa-mixer: pick first working fallback and ignore rest
+
+Add the multi-channel path configuration, and pick
+the first working fallback and ignore the rest
+mapping.
+
+commit 38905a096c100e1ab69319a4a2ace984dc7f35ed
+Author: Igor V. Kovalenko <igor.v.kovalenko@gmail.com>
+Date:   Fri Apr 16 23:42:00 2021 +0300
+
+    alsa-mixer: Allow selected fallback mappings in all profile sets
+
+    When fallback mapping is selected all subsequent profile sets containing
+    selected mapping are ignored. When there are only e.g. fallback input mappings
+    available, admitted profile set will only contain one profile with selected
+    first input fallback mapping and no outputs, and rest of profiles will only
+    contain outputs and no inputs. When there are only fallback input and output
+    mappings, there will be no profiles admitted at all.
+
+    Fix this by making sure that selected first fallback input or output mapping
+    is actually allowed to exist in all probed profile sets.
+
+    Note while this change allows selected fallback mappings to be found in duplex
+    configuraitons, probing fallbacks still can fail if there is more than one input
+    fallback and first one (selected) does not work in duplex configurations.
+
+    Part-of: <https://gitlab.freedesktop.org/pulseaudio/pulseaudio/-/merge_requests/539>
+
+commit e3f2c25face8f964827f75dbc8fd766fc02aaf6d
+Author: Tanu Kaskinen <tanuk@iki.fi>
+Date:   Sat Jun 6 17:00:01 2020 +0300
+
+    alsa-mixer: Pick at most one fallback mapping
+
+    The old behaviour was such that if none of the normal mappings worked,
+    we would probe ALL fallbacks. I don't think that makes sense, and it
+    caused concrete issues: let's say we have a regular stereo mic device,
+    but there's no "front" PCM defined for it. In this situation we would
+    probe the stereo-fallback mapping (which uses "hw" instead of "front"),
+    and it would work, but then we'd also probe the "multichannel-input"
+    mapping, which would also work, so we end up with two mappings that
+    don't have any difference in behaviour.
+
+    I think it's better to simply pick the first working fallback and ignore
+    the rest.
+
+    Fixes: https://gitlab.freedesktop.org/pulseaudio/pulseaudio/-/issues/901
+    (issue is marked as confidential due to unreleased hardware)
+
+    Part-of: <https://gitlab.freedesktop.org/pulseaudio/pulseaudio/-/merge_requests/304>
+---
+ src/modules/alsa/alsa-mixer.c                 | 22 ++++++++++++++-----
+ .../alsa/mixer/profile-sets/default.conf      |  2 ++
+ 2 files changed, 19 insertions(+), 5 deletions(-)
+
+diff --git a/src/modules/alsa/alsa-mixer.c b/src/modules/alsa/alsa-mixer.c
+index a524d6d..c3050ef 100644
+--- a/src/modules/alsa/alsa-mixer.c
++++ b/src/modules/alsa/alsa-mixer.c
+@@ -4632,6 +4632,7 @@ void pa_alsa_profile_set_probe(
+     pa_alsa_profile **pp, **probe_order;
+     pa_alsa_mapping *m;
+     pa_hashmap *broken_inputs, *broken_outputs, *used_paths;
++    pa_alsa_mapping *selected_fallback_input = NULL, *selected_fallback_output = NULL;
+ 
+     pa_assert(ps);
+     pa_assert(dev_id);
+@@ -4654,11 +4655,16 @@ void pa_alsa_profile_set_probe(
+         uint32_t idx;
+         p = *pp;
+ 
+-        /* Skip if fallback and already found something */
++        /* Skip if fallback and already found something, but still probe already selected fallbacks.
++         * If UCM is used then both fallback_input and fallback_output flags are false.
++         * If UCM is not used then there will be only a single entry in mappings.
++         */
+         if (found_input && p->fallback_input)
+-            continue;
++            if (selected_fallback_input == NULL || pa_idxset_get_by_index(p->input_mappings, 0) != selected_fallback_input)
++                continue;
+         if (found_output && p->fallback_output)
+-            continue;
++            if (selected_fallback_output == NULL || pa_idxset_get_by_index(p->output_mappings, 0) != selected_fallback_output)
++                continue;
+ 
+         /* Skip if this is already marked that it is supported (i.e. from the config file) */
+         if (!p->supported) {
+@@ -4749,14 +4755,20 @@ void pa_alsa_profile_set_probe(
+         if (p->output_mappings)
+             PA_IDXSET_FOREACH(m, p->output_mappings, idx)
+                 if (m->output_pcm) {
+-                    found_output |= !p->fallback_output;
++                    found_output = true;
++                    if (p->fallback_output && selected_fallback_output == NULL) {
++                        selected_fallback_output = m;
++                    }
+                     mapping_paths_probe(m, p, PA_ALSA_DIRECTION_OUTPUT, used_paths);
+                 }
+ 
+         if (p->input_mappings)
+             PA_IDXSET_FOREACH(m, p->input_mappings, idx)
+                 if (m->input_pcm) {
+-                    found_input |= !p->fallback_input;
++                    found_input = true;
++                    if (p->fallback_input && selected_fallback_input == NULL) {
++                        selected_fallback_input = m;
++                    }
+                     mapping_paths_probe(m, p, PA_ALSA_DIRECTION_INPUT, used_paths);
+                 }
+     }
+diff --git a/src/modules/alsa/mixer/profile-sets/default.conf b/src/modules/alsa/mixer/profile-sets/default.conf
+index d889069..f509383 100644
+--- a/src/modules/alsa/mixer/profile-sets/default.conf
++++ b/src/modules/alsa/mixer/profile-sets/default.conf
+@@ -458,6 +458,7 @@ exact-channels = false
+ fallback = yes
+ priority = 1
+ direction = output
++paths-output = multichannel-output
+ 
+ [Mapping multichannel-input]
+ device-strings = hw:%f
+@@ -466,6 +467,7 @@ exact-channels = false
+ fallback = yes
+ priority = 1
+ direction = input
++paths-input = multichannel-input
+ 
+ ; An example for defining multiple-sink profiles
+ #[Profile output:analog-stereo+output:iec958-stereo+input:analog-stereo]
+-- 
+2.20.1
+

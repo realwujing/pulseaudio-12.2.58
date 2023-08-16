@@ -1,0 +1,91 @@
+Index: pulseaudio/src/daemon/main.c
+===================================================================
+--- pulseaudio.orig/src/daemon/main.c
++++ pulseaudio/src/daemon/main.c
+@@ -1191,15 +1191,15 @@ finish:
+         pa_autospawn_lock_done(false);
+     }
+ 
+-    if (alsa_discovery)
+-        pa_alsa_discovery_free(alsa_discovery);
+-
+     if (c) {
+         /* Ensure all the modules/samples are unloaded when the core is still ref'ed,
+          * as unlink callback hooks in modules may need the core to be ref'ed */
+         pa_module_unload_all(c);
+         pa_scache_free_all(c);
+ 
++        if (alsa_discovery)
++            pa_alsa_discovery_free(alsa_discovery);
++
+         pa_core_unref(c);
+         pa_log_info("Daemon terminated.");
+     }
+Index: pulseaudio/src/modules/module-huawei-adapter.c
+===================================================================
+--- pulseaudio.orig/src/modules/module-huawei-adapter.c
++++ pulseaudio/src/modules/module-huawei-adapter.c
+@@ -605,40 +605,47 @@ device_module_done_cb(pa_bluetooth_devic
+ 
+     pa_log_debug("enter hook %s",__func__);
+     //pa_module_unload(u->module, true);
+-    if (u->device_module_init_profile_slot){
++    if (u->device_module_discovery == NULL) {
++        pa_log_debug("no device_module_discovery");
++        return PA_HOOK_OK;
++    }
++
++    if (u->device_module_init_profile_slot) {
+         pa_hook_slot_free(u->device_module_init_profile_slot);
+         u->device_module_init_profile_slot = NULL;
+     }
+ 
+-    if (u->device_module_add_sink_slot){
++    if (u->device_module_add_sink_slot) {
+         pa_hook_slot_free(u->device_module_add_sink_slot);
+         u->device_module_add_sink_slot = NULL;
+     }
+ 
+-    if (u->device_module_add_source_slot){
++    if (u->device_module_add_source_slot) {
+         pa_hook_slot_free(u->device_module_add_source_slot);
+         u->device_module_add_source_slot = NULL;
+     }
+ 
+-    if (u->device_module_sink_state_change_slot){
++    if (u->device_module_sink_state_change_slot) {
+         pa_hook_slot_free(u->device_module_sink_state_change_slot);
+         u->device_module_sink_state_change_slot = NULL;
+     }
+ 
+-    if (u->device_module_source_state_change_slot){
++    if (u->device_module_source_state_change_slot) {
+         pa_hook_slot_free(u->device_module_source_state_change_slot);
+         u->device_module_source_state_change_slot = NULL;
+     }
+ 
+-    if (u->device_module_stop_thread_slot){
++    if (u->device_module_stop_thread_slot) {
+         pa_hook_slot_free(u->device_module_stop_thread_slot);
+         u->device_module_stop_thread_slot = NULL;
+     }
+ 
+-    if (u->device_module_done_slot){
++    if (u->device_module_done_slot) {
+         pa_hook_slot_free(u->device_module_done_slot);
+         u->device_module_done_slot = NULL;
+     }
++    
++    pa_bluetooth_device_module_discovery_unref(u->device_module_discovery);
+     u->device_module_discovery = NULL;
+     return PA_HOOK_OK;
+ }
+@@ -985,7 +992,7 @@ void pa__done(pa_module*m) {
+         pa_hook_slot_free(u->pa_core_native_set_default_command_slot);
+ 
+     if (u->device_module_discovery)
+-        pa_bluetooth_device_module_discovery_unref(u->device_module_discovery);    
++        pa_bluetooth_device_module_discovery_unref(u->device_module_discovery);
+ 
+     if (u->device_module_sink_put_hook_callback_slot)
+         pa_hook_slot_free(u->device_module_sink_put_hook_callback_slot);

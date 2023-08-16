@@ -1,0 +1,28 @@
+From 87b34013c8e41242d9a8fde6e0012b6320f9bee1 Mon Sep 17 00:00:00 2001
+From: zhaochengyi <zhaochengyi@uniontech.com>
+Date: Thu, 4 May 2023 13:05:32 +0800
+Subject: [PATCH] default.pa.in: modify the default value of
+ module-stream-restore
+
+set restore_device to false for module-stream-restore,
+so streams don't restore the selected sink/source.
+---
+ src/daemon/default.pa.in | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/daemon/default.pa.in b/src/daemon/default.pa.in
+index 6c0704f..2b61b08 100755
+--- a/src/daemon/default.pa.in
++++ b/src/daemon/default.pa.in
+@@ -23,7 +23,7 @@ changequote(`[', `]')dnl Set up m4 quoting
+ 
+ ### Automatically restore the volume of streams and devices
+ load-module module-device-restore
+-load-module module-stream-restore
++load-module module-stream-restore restore_device=false
+ load-module module-card-restore
+ 
+ ### Automatically augment property information from .desktop files
+-- 
+2.20.1
+

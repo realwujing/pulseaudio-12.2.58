@@ -1,0 +1,81 @@
+Index: pulseaudio/src/Makefile.am
+===================================================================
+--- pulseaudio.orig/src/Makefile.am	2020-05-15 18:07:14.852209838 +0800
++++ pulseaudio/src/Makefile.am	2020-05-15 18:11:18.864642074 +0800
+@@ -1321,7 +1321,8 @@
+ 		modules/alsa/mixer/profile-sets/kinect-audio.conf \
+ 		modules/alsa/mixer/profile-sets/sb-omni-surround-5.1.conf \
+ 		modules/alsa/mixer/profile-sets/steelseries-arctis-usb-audio.conf \
+-		modules/alsa/mixer/profile-sets/dell-dock-tb16-usb-audio.conf
++		modules/alsa/mixer/profile-sets/dell-dock-tb16-usb-audio.conf \
++		modules/alsa/mixer/profile-sets/st2557-pc-usb-audio.conf
+ 
+ if HAVE_UDEV
+ dist_udevrules_DATA = \
+Index: pulseaudio/src/modules/alsa/mixer/profile-sets/90-pulseaudio.rules
+===================================================================
+--- pulseaudio.orig/src/modules/alsa/mixer/profile-sets/90-pulseaudio.rules	2020-05-15 18:08:10.000000000 +0800
++++ pulseaudio/src/modules/alsa/mixer/profile-sets/90-pulseaudio.rules	2020-05-15 18:09:06.792718273 +0800
+@@ -113,5 +113,6 @@
+ ATTRS{idVendor}=="1038", ATTRS{idProduct}=="12ad", ENV{PULSE_PROFILE_SET}="steelseries-arctis-usb-audio.conf"
+ ATTRS{idVendor}=="1038", ATTRS{idProduct}=="1294", ENV{PULSE_PROFILE_SET}="steelseries-arctis-usb-audio.conf"
+ 
++ATTRS{idVendor}=="0bda", ATTRS{idProduct}=="4987", ENV{PULSE_PROFILE_SET}="st2557-pc-usb-audio.conf"
+ 
+ LABEL="pulseaudio_end"
+Index: pulseaudio/src/modules/alsa/mixer/profile-sets/st2557-pc-usb-audio.conf
+===================================================================
+--- /dev/null	1970-01-01 00:00:00.000000000 +0000
++++ pulseaudio/src/modules/alsa/mixer/profile-sets/st2557-pc-usb-audio.conf	2020-05-15 18:09:46.286233161 +0800
+@@ -0,0 +1,51 @@
++# This file is part of PulseAudio.
++#
++# PulseAudio is free software; you can redistribute it and/or modify
++# it under the terms of the GNU Lesser General Public License as
++# published by the Free Software Foundation; either version 2.1 of the
++# License, or (at your option) any later version.
++#
++# PulseAudio is distributed in the hope that it will be useful, but
++# WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
++# General Public License for more details.
++#
++# You should have received a copy of the GNU Lesser General Public License
++# along with PulseAudio; if not, see <http://www.gnu.org/licenses/>.
++
++[General]
++auto-profiles = yes
++
++[Mapping analog-stereo-headphone]
++description = Headphone
++paths-output = analog-output analog-output-headphones
++device-strings = hw:%f,0
++channel-map = left,right
++direction = output
++
++[Mapping analog-stereo-linein]
++description = Linein
++paths-input = analog-input analog-input-linein
++device-strings = hw:%f,2
++channel-map = left,right
++direction = input
++
++[Mapping analog-stereo-rear-mic]
++description = Rear Microphone
++paths-input = analog-input analog-input-rear-mic
++device-strings = hw:%f,1
++channel-map = left,right
++direction = input
++
++[Mapping analog-stereo-front-mic]
++description = Front Microphone
++paths-input = analog-input analog-input-front-mic
++device-strings = hw:%f,0
++channel-map = left
++direction = input
++
++[Profile output:analog-stereo-headphone+input:analog-stereo-all]
++description = Huaqin ST2557-PC
++output-mappings = analog-stereo-headphone
++input-mappings = analog-stereo-linein analog-stereo-rear-mic analog-stereo-front-mic
++skip-probe = yes

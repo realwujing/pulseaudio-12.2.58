@@ -1,0 +1,43 @@
+From 70311525e7c7352ea4583b897055862047ffafaf Mon Sep 17 00:00:00 2001
+From: zhaochengyi <zhaochengyi@uniontech.com>
+Date: Wed, 12 Jan 2022 11:11:21 +0800
+Subject: [PATCH] fix: No need to start pulseaudio when starting lightdm user
+
+When starting the lightdm user, if pulseaudio is started,
+it will establish a relationship with bluetoothd. Afterwards,
+the system starts the pulseaudio of the user to be logged in,
+it also needs to establish a relationship with bluetoothd,
+the two pulseaudio conflict, so it needs to be closed
+lightdm user starts pulseaudio.
+---
+ src/daemon/systemd/user/pulseaudio.service.in | 1 +
+ src/daemon/systemd/user/pulseaudio.socket     | 1 +
+ 2 files changed, 2 insertions(+)
+
+diff --git a/src/daemon/systemd/user/pulseaudio.service.in b/src/daemon/systemd/user/pulseaudio.service.in
+index 46897bf..d6eb9e9 100644
+--- a/src/daemon/systemd/user/pulseaudio.service.in
++++ b/src/daemon/systemd/user/pulseaudio.service.in
+@@ -15,6 +15,7 @@ Description=Sound Service
+ # socket-service relationship, see systemd.socket(5).
+ Requires=pulseaudio.socket
+ ConditionUser=!root
++ConditionUser=!lightdm
+ 
+ [Service]
+ # Note that notify will only work if --daemonize=no
+diff --git a/src/daemon/systemd/user/pulseaudio.socket b/src/daemon/systemd/user/pulseaudio.socket
+index 98c1002..2eb4003 100644
+--- a/src/daemon/systemd/user/pulseaudio.socket
++++ b/src/daemon/systemd/user/pulseaudio.socket
+@@ -1,6 +1,7 @@
+ [Unit]
+ Description=Sound System
+ ConditionUser=!root
++ConditionUser=!lightdm
+ 
+ [Socket]
+ Priority=6
+-- 
+2.20.1
+

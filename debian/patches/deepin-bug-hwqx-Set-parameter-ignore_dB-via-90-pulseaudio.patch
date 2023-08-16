@@ -1,0 +1,49 @@
+From e0ba816b94e4dd347ea6242a6005e3ade09597d4 Mon Sep 17 00:00:00 2001
+From: Chengyi Zhao <zhaochengyi@uniontech.com>
+Date: Mon, 18 Oct 2021 10:37:51 +0800
+Subject: [PATCH] alsa-mixer: Set parameter ignore_dB via 90-pulseaudio.rules
+
+Add the environment variable PULSE_VOLUME_IGNORE_DB for
+ignore_dB of the module module-udev-detect via the rule
+file 90-pulseaudio.rules.
+---
+ src/modules/alsa/mixer/profile-sets/90-pulseaudio.rules | 4 ++++
+ src/modules/alsa/module-alsa-card.c                     | 9 +++++++++
+ 2 files changed, 13 insertions(+)
+
+diff --git a/src/modules/alsa/mixer/profile-sets/90-pulseaudio.rules b/src/modules/alsa/mixer/profile-sets/90-pulseaudio.rules
+index 52d3a96..ef222e2 100644
+--- a/src/modules/alsa/mixer/profile-sets/90-pulseaudio.rules
++++ b/src/modules/alsa/mixer/profile-sets/90-pulseaudio.rules
+@@ -126,4 +126,8 @@ ATTRS{idVendor}=="0bda", ATTRS{idProduct}=="491b", ENV{PULSE_PROFILE_SET}="22d4-
+ # Dahua
+ ATTRS{idVendor}=="0bda", ATTRS{idProduct}=="4f05", ENV{PULSE_PROFILE_SET}="dahua-4f05-usb-audio.conf"
+ 
++# for ignore_dB
++# Huawei
++ATTRS{idVendor}=="31b2", ATTRS{idProduct}=="0011", ENV{PULSE_VOLUME_IGNORE_DB}="1"
++
+ LABEL="pulseaudio_end"
+diff --git a/src/modules/alsa/module-alsa-card.c b/src/modules/alsa/module-alsa-card.c
+index 1f78f18..5a07416 100644
+--- a/src/modules/alsa/module-alsa-card.c
++++ b/src/modules/alsa/module-alsa-card.c
+@@ -745,6 +745,15 @@ int pa__init(pa_module *m) {
+         goto fail;
+     }
+ 
++/* Get the value of ignore_dB from the file 90-pulseaudio.rules */
++#ifdef HAVE_UDEV
++    if (fn = pa_udev_get_property(u->alsa_card_index, "PULSE_VOLUME_IGNORE_DB")) {
++        pa_log("Card '%s', PULSE_VOLUME_IGNORE_DB is %s", u->device_id, fn);
++        ignore_dB = atoi(fn);
++        pa_xfree(fn);
++    }
++#endif
++
+     if (!pa_in_system_mode()) {
+         char *rname;
+ 
+-- 
+2.20.1
+

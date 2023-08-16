@@ -1,0 +1,50 @@
+diff --git a/src/modules/alsa/mixer/profile-sets/st2557-pc-usb-audio.conf b/src/modules/alsa/mixer/profile-sets/st2557-pc-usb-audio.conf
+index 8051a43..01c3d0f 100644
+--- a/src/modules/alsa/mixer/profile-sets/st2557-pc-usb-audio.conf
++++ b/src/modules/alsa/mixer/profile-sets/st2557-pc-usb-audio.conf
+@@ -23,13 +23,27 @@ device-strings = hw:%f,0
+ channel-map = left,right
+ direction = output
+ 
+-[Mapping analog-stereo-linein]
++[Mapping analog-stereo-linein2]
+ description = Linein
+ paths-input = analog-input analog-input-linein
+ device-strings = hw:%f,2
+ channel-map = left,right
+ direction = input
+ 
++[Mapping analog-stereo-linein]
++description = Linein
++paths-input = analog-input analog-input-linein
++device-strings = hw:%f,1
++channel-map = left,right
++direction = input
++
++[Mapping analog-stereo-mic]
++description =  Microphone
++paths-input = analog-input analog-input-mic
++device-strings = hw:%f,0
++channel-map = left,right
++direction = input
++
+ [Mapping analog-stereo-rear-mic]
+ description = Rear Microphone
+ paths-input = analog-input analog-input-rear-mic
+@@ -50,11 +64,15 @@ db-values = 0:-65.62 47:0
+ [DecibelFix Rear Mic]
+ db-values = 0:-65.62 47:0
+ 
++[DecibelFix Mic]
++db-values = 0:-65.62 47:0
++
+ [DecibelFix Line]
+ db-values = 0:-65.62 47:0
+ 
+ [Profile output:analog-stereo-headphone+input:analog-stereo-all]
++
+ description = Huaqin ST2557-PC
+ output-mappings = analog-stereo-headphone
+-input-mappings = analog-stereo-linein analog-stereo-rear-mic analog-stereo-front-mic
++input-mappings = analog-stereo-mic analog-stereo-linein analog-stereo-linein2 analog-stereo-rear-mic analog-stereo-front-mic
+ skip-probe = yes

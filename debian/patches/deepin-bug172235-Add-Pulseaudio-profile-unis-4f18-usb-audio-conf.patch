@@ -1,0 +1,113 @@
+From cb1ea27d94bd20fe86823d6ce64775f6fada88a3 Mon Sep 17 00:00:00 2001
+From: zhaochengyi <zhaochengyi@uniontech.com>
+Date: Thu, 23 Feb 2023 10:55:40 +0800
+Subject: [PATCH] Add Pulseaudio profile unis-4f18-usb-audio.conf to adapt the
+ device 'UNIS Unis D3830 G3'
+
+---
+ src/Makefile.am                               |  3 +-
+ .../mixer/profile-sets/90-pulseaudio.rules    |  2 +
+ .../profile-sets/unis-4f18-usb-audio.conf     | 64 +++++++++++++++++++
+ 3 files changed, 68 insertions(+), 1 deletion(-)
+ create mode 100644 src/modules/alsa/mixer/profile-sets/unis-4f18-usb-audio.conf
+
+diff --git a/src/Makefile.am b/src/Makefile.am
+index 52de4d6..4755948 100644
+--- a/src/Makefile.am
++++ b/src/Makefile.am
+@@ -1329,7 +1329,8 @@ dist_alsaprofilesets_DATA = \
+ 		modules/alsa/mixer/profile-sets/msi-disable-digital.conf \
+ 		modules/alsa/mixer/profile-sets/loongson-laptop-audio.conf \
+ 		modules/alsa/mixer/profile-sets/dahua-4f05-usb-audio.conf \
+-		modules/alsa/mixer/profile-sets/lenovo-m90h-usb-audio.conf
++		modules/alsa/mixer/profile-sets/lenovo-m90h-usb-audio.conf \
++		modules/alsa/mixer/profile-sets/unis-4f18-usb-audio.conf
+ 
+ if HAVE_UDEV
+ dist_udevrules_DATA = \
+diff --git a/src/modules/alsa/mixer/profile-sets/90-pulseaudio.rules b/src/modules/alsa/mixer/profile-sets/90-pulseaudio.rules
+index aa82261..76ecb74 100644
+--- a/src/modules/alsa/mixer/profile-sets/90-pulseaudio.rules
++++ b/src/modules/alsa/mixer/profile-sets/90-pulseaudio.rules
+@@ -128,6 +128,8 @@ ATTRS{idVendor}=="0bda", ATTRS{idProduct}=="491b", ENV{PULSE_PROFILE_SET}="22d4-
+ ATTRS{idVendor}=="0bda", ATTRS{idProduct}=="4f05", ENV{PULSE_PROFILE_SET}="dahua-4f05-usb-audio.conf"
+ # Lenovo M90H
+ ATTRS{idVendor}=="17aa", ATTRS{idProduct}=="3501", ENV{PULSE_PROFILE_SET}="lenovo-m90h-usb-audio.conf"
++# UNIS Unis D3830 G3
++ATTRS{idVendor}=="0bda", ATTRS{idProduct}=="4f18", ENV{PULSE_PROFILE_SET}="unis-4f18-usb-audio.conf"
+ 
+ # for ignore_dB
+ # Huawei
+diff --git a/src/modules/alsa/mixer/profile-sets/unis-4f18-usb-audio.conf b/src/modules/alsa/mixer/profile-sets/unis-4f18-usb-audio.conf
+new file mode 100644
+index 0000000..276d357
+--- /dev/null
++++ b/src/modules/alsa/mixer/profile-sets/unis-4f18-usb-audio.conf
+@@ -0,0 +1,64 @@
++# This file is part of PulseAudio.
++#
++# PulseAudio is free software; you can redistribute it and/or modify
++# it under the terms of the GNU Lesser General Public License as
++# published by the Free Software Foundation; either version 2.1 of the
++# License, or (at your option) any later version.
++#
++# PulseAudio is distributed in the hope that it will be useful, but
++# WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
++# General Public License for more details.
++#
++# You should have received a copy of the GNU Lesser General Public License
++# along with PulseAudio; if not, see <http://www.gnu.org/licenses/>.
++
++;
++;
++; See default.conf for an explanation on the directives used here.
++
++[General]
++auto-profiles = yes
++
++[Mapping analog-stereo-speaker-output]
++description = Analog Stereo Speaker
++device-strings = hw:%f,0,0
++channel-map = left,right
++direction = output
++paths-output = analog-output-speaker
++
++[Mapping analog-stereo-headphone-output]
++description = Analog Stereo Headphones
++device-strings = hw:%f,1,0
++channel-map = left,right
++direction = output
++paths-output = analog-output-headphones
++
++#[Mapping analog-stereo-spdif-output]
++#description = Analog Stereo SPDIF
++#device-strings = hw:%f,2,0
++#channel-map = left,right
++#direction = output
++#paths-output = iec958-stereo-output
++
++#[Mapping analog-stereo-spdif-input]
++#description = Analog Stereo SPDIF
++#device-strings = hw:%f,0,0
++#channel-map = left,right
++#direction = input
++#paths-input = iec958-stereo-input
++
++[Mapping analog-stereo-line-input]
++description = Analog Stereo Line Input
++device-strings = hw:%f,1,0
++channel-map = left,right
++direction = input
++paths-input = analog-input-linein
++
++[Mapping analog-stereo-mic-input]
++description = Analog Stereo Input
++device-strings = hw:%f,2,0
++channel-map = left,right
++direction = input
++paths-input = analog-input-mic
++
+-- 
+2.20.1
+

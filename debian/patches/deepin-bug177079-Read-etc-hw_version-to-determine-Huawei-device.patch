@@ -1,0 +1,209 @@
+From 6f568cd52d5181bfe771faced719b6bbfcc0d8d4 Mon Sep 17 00:00:00 2001
+From: Chengyi Zhao <zhaochengyi@uniontech.com>
+Date: Tue, 27 Dec 2022 22:18:35 +0800
+Subject: [PATCH] daemon-conf: Read /etc/hw_version to determine Huawei device
+
+Use the contents of the file /etc/hw_version instead of
+obtaining the name of the sound card to determine
+whether it is a Huawei platform device.
+---
+ .../pulseaudio.conf                           |  0
+ .../huawei/KelvinV-W5821/pulseaudio.conf      |  9 +++
+ .../custom/huawei/PGUV-WBY0/pulseaudio.conf   |  9 +++
+ .../custom/huawei/PGUW-WBX0/pulseaudio.conf   |  9 +++
+ src/daemon/daemon-conf.c                      | 66 ++++++++-----------
+ src/daemon/daemon-conf.h                      |  2 +-
+ src/daemon/main.c                             | 11 ++--
+ 8 files changed, 65 insertions(+), 46 deletions(-)
+ rename src/daemon/custom/huawei/{hisi-hdmi => KelvinU-WDU0A}/pulseaudio.conf (100%)
+ create mode 100644 src/daemon/custom/huawei/KelvinV-W5821/pulseaudio.conf
+ create mode 100644 src/daemon/custom/huawei/PGUV-WBY0/pulseaudio.conf
+ create mode 100644 src/daemon/custom/huawei/PGUW-WBX0/pulseaudio.conf
+
+diff --git a/src/daemon/custom/huawei/hisi-hdmi/pulseaudio.conf b/src/daemon/custom/huawei/KelvinU-WDU0A/pulseaudio.conf
+similarity index 100%
+rename from src/daemon/custom/huawei/hisi-hdmi/pulseaudio.conf
+rename to src/daemon/custom/huawei/KelvinU-WDU0A/pulseaudio.conf
+diff --git a/src/daemon/custom/huawei/KelvinV-W5821/pulseaudio.conf b/src/daemon/custom/huawei/KelvinV-W5821/pulseaudio.conf
+new file mode 100644
+index 0000000..0ed7727
+--- /dev/null
++++ b/src/daemon/custom/huawei/KelvinV-W5821/pulseaudio.conf
+@@ -0,0 +1,9 @@
++# Add an incremental coverage profile for Huawei platforms.
++
++default-sample-format = s16le
++default-sample-rate = 48000
++default-sample-channels = 2
++default-channel-map = front-left,front-right
++
++default-fragments = 2
++default-fragment-size-msec = 20
+diff --git a/src/daemon/custom/huawei/PGUV-WBY0/pulseaudio.conf b/src/daemon/custom/huawei/PGUV-WBY0/pulseaudio.conf
+new file mode 100644
+index 0000000..0ed7727
+--- /dev/null
++++ b/src/daemon/custom/huawei/PGUV-WBY0/pulseaudio.conf
+@@ -0,0 +1,9 @@
++# Add an incremental coverage profile for Huawei platforms.
++
++default-sample-format = s16le
++default-sample-rate = 48000
++default-sample-channels = 2
++default-channel-map = front-left,front-right
++
++default-fragments = 2
++default-fragment-size-msec = 20
+diff --git a/src/daemon/custom/huawei/PGUW-WBX0/pulseaudio.conf b/src/daemon/custom/huawei/PGUW-WBX0/pulseaudio.conf
+new file mode 100644
+index 0000000..0ed7727
+--- /dev/null
++++ b/src/daemon/custom/huawei/PGUW-WBX0/pulseaudio.conf
+@@ -0,0 +1,9 @@
++# Add an incremental coverage profile for Huawei platforms.
++
++default-sample-format = s16le
++default-sample-rate = 48000
++default-sample-channels = 2
++default-channel-map = front-left,front-right
++
++default-fragments = 2
++default-fragment-size-msec = 20
+diff --git a/src/daemon/daemon-conf.c b/src/daemon/daemon-conf.c
+index 5fbe833..f5cafa0 100644
+--- a/src/daemon/daemon-conf.c
++++ b/src/daemon/daemon-conf.c
+@@ -71,7 +71,10 @@ struct vendor_card_part {
+ };
+ 
+ const struct vendor_card_part id_table[] = {
+-    {0x1, "huawei", "hisi-hdmi"},
++    {0x1, "huawei", "KelvinV-W5821"},
++    {0x2, "huawei", "KelvinU-WDU0A"},
++    {0x3, "huawei", "PGUW-WBX0"},
++    {0x4, "huawei", "PGUV-WBY0"},
+     {-1, "unkonwn", "unkonwn"},
+ };
+ 
+@@ -524,53 +527,36 @@ static int parse_server_type(pa_config_parser_state *state) {
+ }
+ #endif
+ 
+-int pa_get_card_name(char *path, char *card)
+-{
+-    char *load_path;
+-    void *handle;
+-    int (*get_card_index)(int);
+-    int (*get_card_name)(int, char*);
+-    char card_name[SND_CARD_NAME_LEN];
+-    int j, index = -1, ret = 0;
+-
+-    load_path = pa_sprintf_malloc("%s" PA_PATH_SEP "%s", path, PLATFORM_LOAD_LIBRARY);
+-    handle = dlopen(load_path, RTLD_NOW);
+-    if (handle == NULL) {
+-        pa_log(_("Failed to open library %s: %s"), load_path, dlerror());
+-        ret = -1;
+-        goto finish;
+-    }
++bool pa_get_hw_info(const char *path, char *card) {
++    int i;
++    bool matched;
++    char *s;
++    char *r;
++    const char *state = NULL;
+ 
+-    get_card_index = dlsym(handle, "pa_alsa_get_card_index");
+-    get_card_name = dlsym(handle, "pa_alsa_get_card_name");
+-    if ((get_card_index == NULL) || (get_card_name == NULL)) {
+-        pa_log(_("Failed to get function %s"), dlerror());
+-        dlclose(handle);
+-        ret = -1;
+-        goto finish;
+-    }
++    matched = false;
++    if ((s = pa_read_line_from_file(path)) != NULL) {
++        while ((r = pa_split_spaces(s, &state))) {
++            pa_log_debug("hw info r: %s", r);
+ 
+-    while (1) {
+-        index = get_card_index(index);
+-        if (index >= 0) {
+-            get_card_name(index, card_name);
+-            for (j = 0; id_table[j].id != -1; j++) {
+-                if (strcmp(id_table[j].card, card_name) == 0) {
+-                    strncpy(card, card_name, SND_CARD_NAME_LEN);
++            for (i = 0; id_table[i].id != -1; i++) {
++                if (strcmp(id_table[i].card, r) == 0) {
++                    strncpy(card, r, SND_CARD_NAME_LEN);
++                    matched = true;
+                     break;
+                 }
+             }
+-        } else {
+-            /* no sound card to get */
+-            break;
++
++            pa_xfree(r);
++
++            if (matched)
++                break;
+         }
+-    }
+ 
+-    dlclose(handle);
++        pa_xfree(s);
++    }
+ 
+-finish:
+-    pa_xfree(load_path);
+-    return ret;
++    return matched;
+ }
+ 
+ int pa_get_vendor_name(char *card, char *vendor)
+diff --git a/src/daemon/daemon-conf.h b/src/daemon/daemon-conf.h
+index c859779..0ea2eb3 100644
+--- a/src/daemon/daemon-conf.h
++++ b/src/daemon/daemon-conf.h
+@@ -167,7 +167,7 @@ int pa_daemon_conf_set_local_server_type(pa_daemon_conf *c, const char *string);
+ const char *pa_daemon_conf_get_default_script_file(pa_daemon_conf *c);
+ FILE *pa_daemon_conf_open_default_script_file(pa_daemon_conf *c);
+ 
+-int pa_get_card_name(char *path, char *card);
++bool pa_get_hw_info(const char *path, char *card);
+ int pa_get_vendor_name(char *card, char *vendor);
+ int pa_platform_load(pa_daemon_conf *conf, char *vendor, char *card);
+ #endif
+diff --git a/src/daemon/main.c b/src/daemon/main.c
+index 3a59ac5..463d441 100644
+--- a/src/daemon/main.c
++++ b/src/daemon/main.c
+@@ -380,6 +380,7 @@ int main(int argc, char *argv[]) {
+     bool ltdl_init = false;
+     int n_fds = 0, *passed_fds = NULL;
+     const char *e;
++    const char *hw_info_path = "/etc/hw_version";
+     char vendor_name[SND_CARD_NAME_LEN], card_name[SND_CARD_NAME_LEN];
+ #ifdef HAVE_FORK
+     int daemon_pipe[2] = { -1, -1 };
+@@ -483,11 +484,13 @@ int main(int argc, char *argv[]) {
+ 
+     memset(card_name, 0, sizeof(card_name));
+     memset(vendor_name, 0, sizeof(vendor_name));
+-    pa_get_card_name(conf->dl_search_path, card_name);
+-    pa_get_vendor_name(card_name, vendor_name);
+ 
+-    if (pa_platform_load(conf, vendor_name, card_name) < 0)
+-        pa_log(_("Failed to load platform file."));
++    if (pa_get_hw_info(hw_info_path, card_name)) {
++        pa_get_vendor_name(card_name, vendor_name);
++
++        if (pa_platform_load(conf, vendor_name, card_name) < 0)
++            pa_log(_("Failed to load platform file."));
++    }
+ 
+     if (pa_daemon_conf_env(conf) < 0)
+         goto finish;
+-- 
+2.20.1
+

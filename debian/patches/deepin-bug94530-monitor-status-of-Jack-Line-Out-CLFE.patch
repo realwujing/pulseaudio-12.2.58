@@ -1,0 +1,27 @@
+From 83a8f5b68e726bf2870d4602dff3d586a7f2ed1f Mon Sep 17 00:00:00 2001
+From: Chengyi Zhao <zhaochengyi@uniontech.com>
+Date: Fri, 17 Sep 2021 16:59:50 +0800
+Subject: [PATCH] alsamixer: monitor the status of "Jack Line Out CLFE"
+
+PulseAudio needs to monitor the status of plugging and unplugging
+about the jack "Jack Line Out CLFE".
+---
+ src/modules/alsa/mixer/paths/analog-output-lineout.conf | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/src/modules/alsa/mixer/paths/analog-output-lineout.conf b/src/modules/alsa/mixer/paths/analog-output-lineout.conf
+index 681c648..a32073b 100644
+--- a/src/modules/alsa/mixer/paths/analog-output-lineout.conf
++++ b/src/modules/alsa/mixer/paths/analog-output-lineout.conf
+@@ -61,8 +61,6 @@ state.unplugged = unknown
+ required-any = any
+ 
+ [Jack Line Out CLFE]
+-state.plugged = unknown
+-state.unplugged = unknown
+ required-any = any
+ 
+ [Jack Line Out CLFE Phantom]
+-- 
+2.20.1
+

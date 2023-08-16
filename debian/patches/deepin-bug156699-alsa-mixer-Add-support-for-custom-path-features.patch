@@ -1,0 +1,458 @@
+From a4f8d612ab0a70122dbe8f27bd4e4a6b31588f8c Mon Sep 17 00:00:00 2001
+From: Chengyi Zhao <zhaochengyi@uniontech.com>
+Date: Mon, 26 Dec 2022 17:44:26 +0800
+Subject: [PATCH] alsa-mixer: Add support for custom path features
+
+For application scenarios that need to modify the path configuration,
+add the cust directory to save these custom path configuration files,
+and perform dynamic replacement after the sound card is recognized.
+---
+ src/Makefile.am                               |   4 +
+ src/modules/alsa/alsa-mixer.c                 |  81 ++++++++-
+ src/modules/alsa/alsa-mixer.h                 |   8 +-
+ .../1d17-3288/analog-input-internal-mic.conf  | 157 ++++++++++++++++++
+ .../mixer/profile-sets/90-pulseaudio.rules    |   2 +
+ src/modules/alsa/module-alsa-card.c           |  16 +-
+ src/tests/alsa-mixer-path-test.c              |   3 +-
+ 7 files changed, 265 insertions(+), 6 deletions(-)
+ create mode 100644 src/modules/alsa/mixer/paths/cust/1d17-3288/analog-input-internal-mic.conf
+
+diff --git a/src/Makefile.am b/src/Makefile.am
+index 1297a9d..4d38910 100644
+--- a/src/Makefile.am
++++ b/src/Makefile.am
+@@ -30,6 +30,7 @@ endif
+ if HAVE_ALSA
+ alsaprofilesetsdir=$(datadir)/pulseaudio/alsa-mixer/profile-sets
+ alsapathsdir=$(datadir)/pulseaudio/alsa-mixer/paths
++custalsapathsdir=$(datadir)/pulseaudio/alsa-mixer/paths/cust/1d17-3288
+ endif
+ if HAVE_DBUS
+ dbuspolicydir=$(sysconfdir)/dbus-1/system.d
+@@ -1374,6 +1375,9 @@ dist_alsapaths_DATA = \
+ 		modules/alsa/mixer/paths/steelseries-arctis-output-mono.conf \
+ 		modules/alsa/mixer/paths/steelseries-arctis-output-stereo.conf
+ 
++dist_custalsapaths_DATA = \
++                modules/alsa/mixer/paths/cust/1d17-3288/analog-input-internal-mic.conf
++
+ endif
+ 
+ if HAVE_SOLARIS
+diff --git a/src/modules/alsa/alsa-mixer.c b/src/modules/alsa/alsa-mixer.c
+index ed3bbf5..914ece8 100644
+--- a/src/modules/alsa/alsa-mixer.c
++++ b/src/modules/alsa/alsa-mixer.c
+@@ -25,6 +25,7 @@
+ #include <sys/types.h>
+ #include <asoundlib.h>
+ #include <math.h>
++#include <dirent.h>
+ 
+ #ifdef HAVE_VALGRIND_MEMCHECK_H
+ #include <valgrind/memcheck.h>
+@@ -2648,9 +2649,23 @@ static const char *get_default_paths_dir(void) {
+         return PA_ALSA_PATHS_DIR;
+ }
+ 
+-pa_alsa_path* pa_alsa_path_new(const char *paths_dir, const char *fname, pa_alsa_direction_t direction) {
++static char *pa_alsa_get_cust_filename(pa_hashmap *cust_paths, const char *fname) {
++
++    char *path = NULL;
++
++    pa_assert(cust_paths);
++    pa_assert(fname);
++
++    if ((path = pa_hashmap_get(cust_paths, fname)) != NULL)
++        return pa_xstrdup(path);
++
++    return NULL;
++}
++
++pa_alsa_path* pa_alsa_path_new(const pa_alsa_profile_set *ps, const char *paths_dir, const char *fname, pa_alsa_direction_t direction) {
+     pa_alsa_path *p;
+     char *fn;
++    char *cust_fn = NULL;
+     int r;
+     const char *n;
+     bool mute_during_activation = false;
+@@ -2714,7 +2729,20 @@ pa_alsa_path* pa_alsa_path_new(const char *paths_dir, const char *fname, pa_alsa
+     if (!paths_dir)
+         paths_dir = get_default_paths_dir();
+ 
+-    fn = pa_maybe_prefix_path(fname, paths_dir);
++    /*
++        If this fname has been in the custom folder, then load the custom fname.
++    */
++    if (ps && ps->cust_folder)
++        cust_fn = pa_alsa_get_cust_filename(ps->cust_paths, fname);
++
++    if (cust_fn) {
++        fn = pa_maybe_prefix_path(cust_fn, paths_dir);
++        p->customized = true;
++        pa_xfree(cust_fn);
++    } else
++        fn = pa_maybe_prefix_path(fname, paths_dir);
++
++    pa_log_info("Loading path config: %s,%s,%s,%s", fn, fname, n, p->name);
+ 
+     r = pa_config_parse(fn, NULL, items, p->proplist, false, p);
+     pa_xfree(fn);
+@@ -3202,7 +3230,7 @@ pa_alsa_path_set *pa_alsa_path_set_new(pa_alsa_mapping *m, pa_alsa_direction_t d
+ 
+             if (!p) {
+                 char *fn = pa_sprintf_malloc("%s.conf", *in);
+-                p = pa_alsa_path_new(paths_dir, fn, direction);
++                p = pa_alsa_path_new(m->profile_set, paths_dir, fn, direction);
+                 pa_xfree(fn);
+                 if (p)
+                     profile_set_add_path(m->profile_set, p);
+@@ -3629,6 +3657,11 @@ void pa_alsa_profile_set_free(pa_alsa_profile_set *ps) {
+     if (ps->decibel_fixes)
+         pa_hashmap_free(ps->decibel_fixes);
+ 
++    if (ps->cust_paths)
++        pa_hashmap_free(ps->cust_paths);
++
++    pa_xfree(ps->cust_folder);
++
+     pa_xfree(ps);
+ }
+ 
+@@ -4529,6 +4562,9 @@ pa_alsa_profile_set* pa_alsa_profile_set_new(const char *fname, const pa_channel
+     ps->input_paths = pa_hashmap_new_full(pa_idxset_string_hash_func, pa_idxset_string_compare_func, NULL, (pa_free_cb_t) pa_alsa_path_free);
+     ps->output_paths = pa_hashmap_new_full(pa_idxset_string_hash_func, pa_idxset_string_compare_func, NULL, (pa_free_cb_t) pa_alsa_path_free);
+ 
++    ps->cust_paths = pa_hashmap_new_full(pa_idxset_string_hash_func, pa_idxset_string_compare_func, (pa_free_cb_t) pa_xfree, (pa_free_cb_t) pa_xfree);
++    ps->cust_folder = NULL;
++
+     items[0].data = &ps->auto_profiles;
+ 
+     if (!fname)
+@@ -4699,6 +4735,45 @@ static void mapping_query_hw_device(pa_alsa_mapping *mapping, snd_pcm_t *pcm) {
+     mapping->hw_device_index = snd_pcm_info_get_device(pcm_info);
+ }
+ 
++void pa_alsa_profile_set_cust_paths(pa_alsa_profile_set *ps, const char *cust_folder) {
++
++    DIR *dir;
++    struct dirent *ent;
++    const char *paths_dir;
++    char *fn;
++    char *key;
++    char *value;
++
++    pa_assert(ps);
++    pa_assert(cust_folder);
++
++    paths_dir = get_default_paths_dir();
++    pa_log_debug("Analyzing directory: '%s'", paths_dir);
++
++    fn = pa_maybe_prefix_path(cust_folder, paths_dir);
++
++    pa_log_debug("open directory: '%s'", fn);
++
++    dir = opendir(fn);
++    while ((ent = readdir(dir)) != NULL) {
++        if (pa_streq(ent->d_name, ".") || pa_streq(ent->d_name, ".."))
++            continue;
++        pa_log_debug("Analyzing file: '%s'", ent->d_name);
++
++        key = pa_xstrndup(ent->d_name, strlen(ent->d_name));
++        value = pa_maybe_prefix_path(key, cust_folder);
++
++        /* Open the cust folder, and add all path to hash map */
++        pa_hashmap_put(ps->cust_paths, key, value);
++        pa_log_debug("ps->cust_paths file: '%s', '%s'", key, value);
++
++    }
++    closedir(dir);
++
++    pa_xfree(fn);
++
++}
++
+ void pa_alsa_profile_set_probe(
+         pa_alsa_profile_set *ps,
+         const char *dev_id,
+diff --git a/src/modules/alsa/alsa-mixer.h b/src/modules/alsa/alsa-mixer.h
+index f40876d..e3d39be 100644
+--- a/src/modules/alsa/alsa-mixer.h
++++ b/src/modules/alsa/alsa-mixer.h
+@@ -208,6 +208,7 @@ struct pa_alsa_path {
+     /* These two are used during probing only */
+     bool has_req_any:1;
+     bool req_any_present:1;
++    bool customized:1;
+ 
+     long min_volume, max_volume;
+     double min_dB, max_dB;
+@@ -237,7 +238,7 @@ void pa_alsa_option_dump(pa_alsa_option *o);
+ void pa_alsa_jack_dump(pa_alsa_jack *j);
+ void pa_alsa_element_dump(pa_alsa_element *e);
+ 
+-pa_alsa_path *pa_alsa_path_new(const char *paths_dir, const char *fname, pa_alsa_direction_t direction);
++pa_alsa_path *pa_alsa_path_new(const pa_alsa_profile_set *ps, const char *paths_dir, const char *fname, pa_alsa_direction_t direction);
+ pa_alsa_path *pa_alsa_path_synthesize(const char *element, pa_alsa_direction_t direction);
+ int pa_alsa_path_probe(pa_alsa_path *p, pa_alsa_mapping *mapping, snd_mixer_t *m, bool ignore_dB);
+ void pa_alsa_path_dump(pa_alsa_path *p);
+@@ -339,6 +340,9 @@ struct pa_alsa_profile_set {
+     pa_hashmap *input_paths;
+     pa_hashmap *output_paths;
+ 
++    pa_hashmap *cust_paths;  /* customize */
++    char *cust_folder;  /* customize */
++
+     bool auto_profiles;
+     bool ignore_dB:1;
+     bool probed:1;
+@@ -349,6 +353,8 @@ void pa_alsa_profile_dump(pa_alsa_profile *p);
+ void pa_alsa_decibel_fix_dump(pa_alsa_decibel_fix *db_fix);
+ pa_alsa_mapping *pa_alsa_mapping_get(pa_alsa_profile_set *ps, const char *name);
+ 
++void pa_alsa_profile_set_cust_paths(pa_alsa_profile_set *ps, const char *cust_folder);
++
+ pa_alsa_profile_set* pa_alsa_profile_set_new(const char *fname, const pa_channel_map *bonus);
+ void pa_alsa_profile_set_probe(pa_alsa_profile_set *ps, const char *dev_id, const pa_sample_spec *ss, unsigned default_n_fragments, unsigned default_fragment_size_msec);
+ void pa_alsa_profile_set_free(pa_alsa_profile_set *s);
+diff --git a/src/modules/alsa/mixer/paths/cust/1d17-3288/analog-input-internal-mic.conf b/src/modules/alsa/mixer/paths/cust/1d17-3288/analog-input-internal-mic.conf
+new file mode 100644
+index 0000000..036bb8e
+--- /dev/null
++++ b/src/modules/alsa/mixer/paths/cust/1d17-3288/analog-input-internal-mic.conf
+@@ -0,0 +1,157 @@
++# This file is part of PulseAudio.
++#
++# PulseAudio is free software; you can redistribute it and/or modify
++# it under the terms of the GNU Lesser General Public License as
++# published by the Free Software Foundation; either version 2.1 of the
++# License, or (at your option) any later version.
++#
++# PulseAudio is distributed in the hope that it will be useful, but
++# WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
++# General Public License for more details.
++#
++# You should have received a copy of the GNU Lesser General Public License
++# along with PulseAudio; if not, see <http://www.gnu.org/licenses/>.
++
++; For devices where a 'Internal Mic' or 'Internal Mic Boost' element exists
++; 'Int Mic' and 'Int Mic Boost' are for compatibility with kernels < 2.6.38
++;
++; See analog-output.conf.common for an explanation on the directives
++
++[General]
++priority = 89
++description-key = analog-input-microphone-internal
++
++[Properties]
++device.description = custom device 1d17-3288
++
++[Jack Mic]
++state.plugged = no
++state.unplugged = unknown
++
++[Jack Dock Mic]
++state.plugged = no
++state.unplugged = unknown
++
++[Jack Front Mic]
++state.plugged = no
++state.unplugged = unknown
++
++[Jack Rear Mic]
++state.plugged = no
++state.unplugged = unknown
++
++[Jack Internal Mic Phantom]
++state.plugged = unknown
++state.unplugged = unknown
++required-any = any
++
++[Element Capture]
++switch = mute
++volume = merge
++override-map.1 = all
++override-map.2 = all-left,all-right
++
++[Element Internal Mic Boost]
++required-any = any
++switch = select
++volume = ignore
++override-map.1 = all
++override-map.2 = all-left,all-right
++
++[Option Internal Mic Boost:on]
++name = input-boost-on
++
++[Option Internal Mic Boost:off]
++name = input-boost-off
++
++[Element Int Mic Boost]
++required-any = any
++switch = select
++volume = merge
++override-map.1 = all
++override-map.2 = all-left,all-right
++
++[Option Int Mic Boost:on]
++name = input-boost-on
++
++[Option Int Mic Boost:off]
++name = input-boost-off
++
++[Element Internal Mic]
++required-any = any
++switch = mute
++volume = merge
++override-map.1 = all
++override-map.2 = all-left,all-right
++
++[Element Int Mic]
++required-any = any
++switch = mute
++volume = merge
++override-map.1 = all
++override-map.2 = all-left,all-right
++
++[Element Input Source]
++enumeration = select
++
++[Option Input Source:Internal Mic]
++name = analog-input-microphone-internal
++required-any = any
++
++[Option Input Source:Int Mic]
++name = analog-input-microphone-internal
++required-any = any
++
++[Element Capture Source]
++enumeration = select
++
++[Option Capture Source:Internal Mic]
++name = analog-input-microphone-internal
++required-any = any
++
++[Option Capture Source:Int Mic]
++name = analog-input-microphone-internal
++required-any = any
++
++[Element Mic]
++switch = off
++volume = off
++
++[Element Dock Mic]
++switch = off
++volume = off
++
++[Element Front Mic]
++switch = off
++volume = off
++
++[Element Rear Mic]
++switch = off
++volume = off
++
++[Element Headphone Mic]
++switch = off
++volume = off
++
++[Element Headphone Mic Boost]
++switch = off
++volume = off
++
++[Element Mic Boost]
++switch = off
++volume = off
++
++[Element Dock Mic Boost]
++switch = off
++volume = off
++
++[Element Front Mic Boost]
++switch = off
++volume = off
++
++[Element Rear Mic Boost]
++switch = off
++volume = off
++
++.include ./../../analog-input-mic.conf.common
+diff --git a/src/modules/alsa/mixer/profile-sets/90-pulseaudio.rules b/src/modules/alsa/mixer/profile-sets/90-pulseaudio.rules
+index fb8a09d..e5166c0 100644
+--- a/src/modules/alsa/mixer/profile-sets/90-pulseaudio.rules
++++ b/src/modules/alsa/mixer/profile-sets/90-pulseaudio.rules
+@@ -88,6 +88,8 @@ ATTRS{subsystem_vendor}=="0x17aa", ATTRS{subsystem_device}=="0x384e", ENV{PULSE_
+ ATTRS{subsystem_vendor}=="0x1462", ATTRS{subsystem_device}=="0x115a", ENV{PULSE_PROFILE_SET}="msi-disable-digital.conf"
+ # Loongson 3A4000
+ ATTRS{vendor}=="0x0014", ATTRS{device}=="0x7a07", ENV{PULSE_PROFILE_SET}="loongson-laptop-audio.conf"
++# NM14KG-326
++ATTRS{subsystem_vendor}=="0x1d17", ATTRS{subsystem_device}=="0x3288", ENV{PULSE_CUST_PATH_SET}="1d17-3288"
+ 
+ # GOTO="pulseaudio_end"
+ 
+diff --git a/src/modules/alsa/module-alsa-card.c b/src/modules/alsa/module-alsa-card.c
+index 69abb16..f6efb34 100644
+--- a/src/modules/alsa/module-alsa-card.c
++++ b/src/modules/alsa/module-alsa-card.c
+@@ -728,6 +728,7 @@ int pa__init(pa_module *m) {
+     const char *description;
+     const char *profile_str = NULL;
+     char *fn = NULL;
++    char *cust_fn = NULL;
+     bool namereg_fail = false;
+ 
+     pa_alsa_refcnt_inc();
+@@ -759,7 +760,7 @@ int pa__init(pa_module *m) {
+ 
+ /* Get the value of ignore_dB from the file 90-pulseaudio.rules */
+ #ifdef HAVE_UDEV
+-    if (fn = pa_udev_get_property(u->alsa_card_index, "PULSE_VOLUME_IGNORE_DB")) {
++    if ((fn = pa_udev_get_property(u->alsa_card_index, "PULSE_VOLUME_IGNORE_DB")) != NULL) {
+         pa_log("Card '%s', PULSE_VOLUME_IGNORE_DB is %s", u->device_id, fn);
+         ignore_dB = atoi(fn);
+         pa_xfree(fn);
+@@ -829,6 +830,19 @@ int pa__init(pa_module *m) {
+ 
+     u->profile_set->ignore_dB = ignore_dB;
+ 
++#ifdef HAVE_UDEV
++    cust_fn = pa_udev_get_property(u->alsa_card_index, "PULSE_CUST_PATH_SET");
++    if (cust_fn) {
++        u->profile_set->cust_folder = pa_maybe_prefix_path(cust_fn, "cust");
++        pa_xfree(cust_fn);
++    }
++#endif
++
++    if (u->profile_set->cust_folder) {
++        /* Add cust paths to hashmap */
++        pa_alsa_profile_set_cust_paths(u->profile_set, u->profile_set->cust_folder);
++    }
++
+     pa_alsa_profile_set_probe(u->profile_set, u->device_id, &m->core->default_sample_spec, m->core->default_n_fragments, m->core->default_fragment_size_msec);
+     pa_alsa_profile_set_dump(u->profile_set);
+ 
+diff --git a/src/tests/alsa-mixer-path-test.c b/src/tests/alsa-mixer-path-test.c
+index ac92d78..4658d77 100644
+--- a/src/tests/alsa-mixer-path-test.c
++++ b/src/tests/alsa-mixer-path-test.c
+@@ -58,6 +58,7 @@ START_TEST (mixer_path_test) {
+     struct dirent *ent;
+     pa_strlist *ship = load_makefile();
+     const char *pathsdir = get_default_paths_dir();
++    pa_alsa_profile_set *profile_set = NULL;
+     pa_log_debug("Analyzing directory: '%s'", pathsdir);
+ 
+     dir = opendir(pathsdir);
+@@ -69,7 +70,7 @@ START_TEST (mixer_path_test) {
+         pa_log_debug("Analyzing file: '%s'", ent->d_name);
+ 
+         /* Can the file be parsed? */
+-        path = pa_alsa_path_new(pathsdir, ent->d_name, PA_ALSA_DIRECTION_ANY);
++        path = pa_alsa_path_new(profile_set, pathsdir, ent->d_name, PA_ALSA_DIRECTION_ANY);
+         fail_unless(path != NULL);
+ 
+         /* Is the file shipped? */
+-- 
+2.20.1
+

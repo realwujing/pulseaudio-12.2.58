@@ -1,0 +1,89 @@
+Index: pulseaudio_12.2.10/src/Makefile.am
+===================================================================
+--- pulseaudio_12.2.10.orig/src/Makefile.am
++++ pulseaudio_12.2.10/src/Makefile.am
+@@ -1322,7 +1322,8 @@ dist_alsaprofilesets_DATA = \
+ 		modules/alsa/mixer/profile-sets/sb-omni-surround-5.1.conf \
+ 		modules/alsa/mixer/profile-sets/steelseries-arctis-usb-audio.conf \
+ 		modules/alsa/mixer/profile-sets/dell-dock-tb16-usb-audio.conf \
+-		modules/alsa/mixer/profile-sets/st2557-pc-usb-audio.conf
++		modules/alsa/mixer/profile-sets/st2557-pc-usb-audio.conf \
++		modules/alsa/mixer/profile-sets/22d4-us-usb-audio.conf
+ 
+ if HAVE_UDEV
+ dist_udevrules_DATA = \
+Index: pulseaudio_12.2.10/src/modules/alsa/mixer/profile-sets/90-pulseaudio.rules
+===================================================================
+--- pulseaudio_12.2.10.orig/src/modules/alsa/mixer/profile-sets/90-pulseaudio.rules
++++ pulseaudio_12.2.10/src/modules/alsa/mixer/profile-sets/90-pulseaudio.rules
+@@ -114,5 +114,7 @@ ATTRS{idVendor}=="1038", ATTRS{idProduct
+ ATTRS{idVendor}=="1038", ATTRS{idProduct}=="1294", ENV{PULSE_PROFILE_SET}="steelseries-arctis-usb-audio.conf"
+ 
+ ATTRS{idVendor}=="0bda", ATTRS{idProduct}=="4987", ENV{PULSE_PROFILE_SET}="st2557-pc-usb-audio.conf"
++# Sugon W330-H35A
++ATTRS{idVendor}=="0bda", ATTRS{idProduct}=="491b", ENV{PULSE_PROFILE_SET}="22d4-us-usb-audio.conf"
+ 
+ LABEL="pulseaudio_end"
+Index: pulseaudio_12.2.10/src/modules/alsa/mixer/profile-sets/22d4-us-usb-audio.conf
+===================================================================
+--- /dev/null
++++ pulseaudio_12.2.10/src/modules/alsa/mixer/profile-sets/22d4-us-usb-audio.conf
+@@ -0,0 +1,58 @@
++# This file is part of PulseAudio.
++#
++# PulseAudio is free software; you can redistribute it and/or modify
++# it under the terms of the GNU Lesser General Public License as
++# published by the Free Software Foundation; either version 2.1 of the
++# License, or (at your option) any later version.
++#
++# PulseAudio is distributed in the hope that it will be useful, but
++# WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
++# General Public License for more details.
++#
++# You should have received a copy of the GNU Lesser General Public License
++# along with PulseAudio; if not, see <http://www.gnu.org/licenses/>.
++
++[General]
++auto-profiles = yes
++
++[Mapping analog-stereo-front-mic]
++description = Front Micphone
++paths-input = analog-input analog-input-front-mic
++device-strings = hw:%f,0
++channel-map = left,right
++direction = input
++
++[Mapping analog-stereo-headphone]
++description = Front Headphone
++paths-output = analog-output analog-output-headphones
++device-strings = hw:%f,0
++channel-map = left,right
++direction = output
++
++[Mapping analog-stereo-linein]
++description = Rear Linein
++paths-input = analog-input analog-input-linein
++device-strings = hw:%f,2
++channel-map = left,right
++direction = input
++
++[Mapping analog-stereo-rear-mic]
++description = Rear Microphone
++paths-input = analog-input analog-input-rear-mic
++device-strings = hw:%f,1
++channel-map = left,right
++direction = input
++
++[Mapping analog-stereo-speaker]
++description = Rear Speaker
++paths-output = analog-output analog-output-speaker
++device-strings = hw:%f,1
++channel-map = left,right
++direction = output
++
++[Profile output:analog-stereo-headphone+output:analog-stereo-speaker+input:analog-stereo-all]
++description = 22D4-US
++output-mappings = analog-stereo-headphone analog-stereo-speaker
++input-mappings = analog-stereo-front-mic analog-stereo-linein analog-stereo-rear-mic
++skip-probe = yes

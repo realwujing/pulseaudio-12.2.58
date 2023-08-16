@@ -1,0 +1,176 @@
+From 5174dbf4321be7bb80383c518bbdcc3219aa5fba Mon Sep 17 00:00:00 2001
+From: Chengyi Zhao <zhaochengyi@uniontech.com>
+Date: Tue, 6 Dec 2022 21:04:56 +0800
+Subject: [PATCH] huawei-adapter: invoke pa_hook_fire in the main thread
+
+---
+ src/modules/bluetooth/module-bluez5-device.c | 92 ++++++++++++++++----
+ src/modules/module-huawei-adapter.c          |  7 +-
+ 2 files changed, 78 insertions(+), 21 deletions(-)
+
+diff --git a/src/modules/bluetooth/module-bluez5-device.c b/src/modules/bluetooth/module-bluez5-device.c
+index 8c7eb62..6ac1d58 100644
+--- a/src/modules/bluetooth/module-bluez5-device.c
++++ b/src/modules/bluetooth/module-bluez5-device.c
+@@ -73,6 +73,8 @@ enum {
+     BLUETOOTH_MESSAGE_IO_THREAD_FAILED,
+     BLUETOOTH_MESSAGE_STREAM_FD_HUP,
+     BLUETOOTH_MESSAGE_SET_TRANSPORT_PLAYING,
++    BLUETOOTH_MESSAGE_SOURCE_STATUS_IO_THREAD,
++    BLUETOOTH_MESSAGE_SINK_STATUS_IO_THREAD,
+     BLUETOOTH_MESSAGE_MAX
+ };
+ 
+@@ -668,6 +670,43 @@ static void teardown_stream(struct userdata *u) {
+     u->stream_setup_done = false;
+ }
+ 
++static void pa_hook_call_data_free(pa_bluetooth_device_source_state_changed_data *ph) {
++    pa_assert(ph);
++
++    if (ph->s_name)
++        pa_xfree(ph->s_name);
++
++    pa_xfree(ph);
++}
++
++static int set_source_status_io_thread(struct userdata *u, pa_bluetooth_device_source_state_changed_data *ph) {
++    pa_assert(u);
++    pa_assert(ph);
++
++    pa_log_debug("set_source_status_io_thread: %s", ph->s_name);
++
++    if (pa_thread_mq_get() != NULL)
++        pa_asyncmsgq_post(pa_thread_mq_get()->outq, PA_MSGOBJECT(u->msg), BLUETOOTH_MESSAGE_SOURCE_STATUS_IO_THREAD, ph, 0, NULL, pa_hook_call_data_free);
++    else
++        return -1;
++
++    return 0;
++}
++
++static int set_sink_status_io_thread(struct userdata *u, pa_bluetooth_device_source_state_changed_data *ph) {
++    pa_assert(u);
++    pa_assert(ph);
++
++    pa_log_debug("set_sink_status_io_thread: %s", ph->s_name);
++
++    if (pa_thread_mq_get() != NULL)
++        pa_asyncmsgq_post(pa_thread_mq_get()->outq, PA_MSGOBJECT(u->msg), BLUETOOTH_MESSAGE_SINK_STATUS_IO_THREAD, ph, 0, NULL, pa_hook_call_data_free);
++    else
++        return -1;
++
++    return 0;
++}
++
+ static int transport_acquire(struct userdata *u, bool optional) {
+     pa_assert(u->transport);
+ 
+@@ -878,7 +917,9 @@ static int source_process_msg(pa_msgobject *o, int code, void *data, int64_t off
+ /* Called from the IO thread. */
+ static int source_set_state_in_io_thread_cb(pa_source *s, pa_source_state_t new_state, pa_suspend_cause_t new_suspend_cause) {
+     struct userdata *u;
+-    pa_bluetooth_device_source_state_changed_data hook_call_data={0};
++    pa_bluetooth_device_source_state_changed_data *hook_call_data = NULL;
++
++    hook_call_data = pa_xnew0(pa_bluetooth_device_source_state_changed_data, 1);
+ 
+     pa_assert(s);
+     pa_assert_se(u = s->userdata);
+@@ -920,14 +961,15 @@ static int source_set_state_in_io_thread_cb(pa_source *s, pa_source_state_t new_
+             break;
+     }
+ 
+-    hook_call_data.core = s->core;
+-    hook_call_data.cur_state = s->state;
+-    hook_call_data.new_state = new_state;
+-    hook_call_data.new_suspend_cause = new_suspend_cause;
+-    hook_call_data.profile = u->profile;
+-    hook_call_data.s_name = s->name;
+-    pa_hook_fire(pa_bluetooth_module_device_discovery_hook(u->device_module_discovery, PA_BLUETOOTH_DEVICE_MODULE_HOOK_SOURCE_STATE_CHANGED),
+-        &hook_call_data);
++    hook_call_data->core = s->core;
++    hook_call_data->cur_state = s->state;
++    hook_call_data->new_state = new_state;
++    hook_call_data->new_suspend_cause = new_suspend_cause;
++    hook_call_data->profile = u->profile;
++    hook_call_data->s_name = pa_xstrdup(s->name);
++
++    if (set_source_status_io_thread(u, hook_call_data) < 0)
++        pa_hook_call_data_free(hook_call_data);
+ 
+     return 0;
+ }
+@@ -1083,7 +1125,9 @@ static int sink_process_msg(pa_msgobject *o, int code, void *data, int64_t offse
+ /* Called from the IO thread. */
+ static int sink_set_state_in_io_thread_cb(pa_sink *s, pa_sink_state_t new_state, pa_suspend_cause_t new_suspend_cause) {
+     struct userdata *u;
+-    pa_bluetooth_device_sink_state_changed_data hook_call_data={0};
++    pa_bluetooth_device_sink_state_changed_data *hook_call_data = NULL;
++
++    hook_call_data = pa_xnew0(pa_bluetooth_device_source_state_changed_data, 1);
+ 
+     pa_assert(s);
+     pa_assert_se(u = s->userdata);
+@@ -1121,14 +1165,16 @@ static int sink_set_state_in_io_thread_cb(pa_sink *s, pa_sink_state_t new_state,
+         case PA_SINK_INVALID_STATE:
+             break;
+     }
+-    hook_call_data.core = s->core;
+-    hook_call_data.cur_state = s->state;
+-    hook_call_data.new_state = new_state;
+-    hook_call_data.new_suspend_cause = new_suspend_cause;
+-    hook_call_data.profile = u->profile;
+-    hook_call_data.s_name = s->name;
+-    pa_hook_fire(pa_bluetooth_module_device_discovery_hook(u->device_module_discovery, PA_BLUETOOTH_DEVICE_MODULE_HOOK_SINK_STATE_CHANGED),
+-        &hook_call_data);
++
++    hook_call_data->core = s->core;
++    hook_call_data->cur_state = s->state;
++    hook_call_data->new_state = new_state;
++    hook_call_data->new_suspend_cause = new_suspend_cause;
++    hook_call_data->profile = u->profile;
++    hook_call_data->s_name = pa_xstrdup(s->name);
++
++    if (set_sink_status_io_thread(u, hook_call_data) < 0)
++        pa_hook_call_data_free(hook_call_data);
+ 
+     return 0;
+ }
+@@ -2260,6 +2306,16 @@ static int device_process_msg(pa_msgobject *obj, int code, void *data, int64_t o
+             if (u->transport_acquired)
+                 pa_bluetooth_transport_set_state(u->transport, PA_BLUETOOTH_TRANSPORT_STATE_PLAYING);
+             break;
++        case BLUETOOTH_MESSAGE_SOURCE_STATUS_IO_THREAD:
++            if (u->device_module_discovery && data != NULL)
++                pa_hook_fire(pa_bluetooth_module_device_discovery_hook(u->device_module_discovery,
++                    PA_BLUETOOTH_DEVICE_MODULE_HOOK_SOURCE_STATE_CHANGED), data);
++            break;
++        case BLUETOOTH_MESSAGE_SINK_STATUS_IO_THREAD:
++            if (u->device_module_discovery && data != NULL)
++                pa_hook_fire(pa_bluetooth_module_device_discovery_hook(u->device_module_discovery,
++                    PA_BLUETOOTH_DEVICE_MODULE_HOOK_SINK_STATE_CHANGED), data);
++            break;
+     }
+ 
+     return 0;
+diff --git a/src/modules/module-huawei-adapter.c b/src/modules/module-huawei-adapter.c
+index b50bd29..0471a65 100644
+--- a/src/modules/module-huawei-adapter.c
++++ b/src/modules/module-huawei-adapter.c
+@@ -881,9 +881,10 @@ pa_core_command_set_default_cb(pa_core *y, pa_native_command_set_default_data *d
+     } else {
+         pa_assert(d->source);
+         pa_log_debug("set default source %s",d->source->name);
+-        if (d->source->name && strlen(d->source->name) >= DEFAULT_PROFILE_LENTH && strncmp(d->source->name, "bluez_source.", DEFAULT_PROFILE_LENTH) == 0) {         
+-            if (d->source->set_state_in_io_thread) {
+-                d->source->set_state_in_io_thread(d->source, PA_SOURCE_RUNNING, PA_SUSPEND_USER);      
++        if (d->source->name && strlen(d->source->name) >= DEFAULT_PROFILE_LENTH && strncmp(d->source->name, "bluez_source.", DEFAULT_PROFILE_LENTH) == 0) {
++            if (d->source->asyncmsgq) {
++                struct set_state_data data = { .state = PA_SOURCE_RUNNING, .suspend_cause = PA_SUSPEND_USER };
++                (void)pa_asyncmsgq_send(d->source->asyncmsgq, PA_MSGOBJECT(d->source), PA_SOURCE_MESSAGE_SET_STATE, &data, 0, NULL);
+             }
+         }   
+     }
+-- 
+2.20.1
+

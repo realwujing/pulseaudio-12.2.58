@@ -1,0 +1,112 @@
+From 4b63f5cd78d4575d257cb06ad430800535cf43d2 Mon Sep 17 00:00:00 2001
+From: zhaochengyi <zhaochengyi@uniontech.com>
+Date: Wed, 23 Nov 2022 16:16:54 +0800
+Subject: [PATCH] Adapted for Lenovo M90H
+
+---
+ src/Makefile.am                               |  3 +-
+ .../mixer/profile-sets/90-pulseaudio.rules    |  2 +
+ .../profile-sets/lenovo-m90h-usb-audio.conf   | 64 +++++++++++++++++++
+ 3 files changed, 68 insertions(+), 1 deletion(-)
+ create mode 100644 src/modules/alsa/mixer/profile-sets/lenovo-m90h-usb-audio.conf
+
+diff --git a/src/Makefile.am b/src/Makefile.am
+index cb1b1ee..1297a9d 100644
+--- a/src/Makefile.am
++++ b/src/Makefile.am
+@@ -1326,7 +1326,8 @@ dist_alsaprofilesets_DATA = \
+ 		modules/alsa/mixer/profile-sets/22d4-us-usb-audio.conf \
+ 		modules/alsa/mixer/profile-sets/msi-disable-digital.conf \
+ 		modules/alsa/mixer/profile-sets/loongson-laptop-audio.conf \
+-		modules/alsa/mixer/profile-sets/dahua-4f05-usb-audio.conf
++		modules/alsa/mixer/profile-sets/dahua-4f05-usb-audio.conf \
++		modules/alsa/mixer/profile-sets/lenovo-m90h-usb-audio.conf
+ 
+ if HAVE_UDEV
+ dist_udevrules_DATA = \
+diff --git a/src/modules/alsa/mixer/profile-sets/90-pulseaudio.rules b/src/modules/alsa/mixer/profile-sets/90-pulseaudio.rules
+index 3d0dd63..fb8a09d 100644
+--- a/src/modules/alsa/mixer/profile-sets/90-pulseaudio.rules
++++ b/src/modules/alsa/mixer/profile-sets/90-pulseaudio.rules
+@@ -122,6 +122,8 @@ ATTRS{idVendor}=="0bda", ATTRS{idProduct}=="4987", ENV{PULSE_PROFILE_SET}="st255
+ ATTRS{idVendor}=="0bda", ATTRS{idProduct}=="491b", ENV{PULSE_PROFILE_SET}="22d4-us-usb-audio.conf"
+ # Dahua
+ ATTRS{idVendor}=="0bda", ATTRS{idProduct}=="4f05", ENV{PULSE_PROFILE_SET}="dahua-4f05-usb-audio.conf"
++# Lenovo M90H
++ATTRS{idVendor}=="17aa", ATTRS{idProduct}=="3501", ENV{PULSE_PROFILE_SET}="lenovo-m90h-usb-audio.conf"
+ 
+ # for ignore_dB
+ # Huawei
+diff --git a/src/modules/alsa/mixer/profile-sets/lenovo-m90h-usb-audio.conf b/src/modules/alsa/mixer/profile-sets/lenovo-m90h-usb-audio.conf
+new file mode 100644
+index 0000000..abb46fd
+--- /dev/null
++++ b/src/modules/alsa/mixer/profile-sets/lenovo-m90h-usb-audio.conf
+@@ -0,0 +1,64 @@
++# This file is part of PulseAudio.
++#
++# PulseAudio is free software; you can redistribute it and/or modify
++# it under the terms of the GNU Lesser General Public License as
++# published by the Free Software Foundation; either version 2.1 of the
++# License, or (at your option) any later version.
++#
++# PulseAudio is distributed in the hope that it will be useful, but
++# WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
++# General Public License for more details.
++#
++# You should have received a copy of the GNU Lesser General Public License
++# along with PulseAudio; if not, see <http://www.gnu.org/licenses/>.
++
++;
++;
++; See default.conf for an explanation on the directives used here.
++
++[General]
++auto-profiles = yes
++
++[Mapping analog-stereo-speaker-output]
++description = Analog Stereo Speaker
++device-strings = hw:%f,0,0
++channel-map = left,right
++direction = output
++paths-output = analog-output-speaker
++
++[Mapping analog-stereo-headphone-output]
++description = Analog Stereo Headphones
++device-strings = hw:%f,1,0
++channel-map = left,right
++direction = output
++paths-output = analog-output-headphones
++
++[Mapping analog-stereo-spdif-output]
++description = Analog Stereo SPDIF
++device-strings = hw:%f,2,0
++channel-map = left,right
++direction = output
++paths-output = iec958-stereo-output
++
++[Mapping analog-stereo-spdif-input]
++description = Analog Stereo SPDIF
++device-strings = hw:%f,0,0
++channel-map = left,right
++direction = input
++paths-input = iec958-stereo-input
++
++[Mapping analog-stereo-line-input]
++description = Analog Stereo Line Input
++device-strings = hw:%f,1,0
++channel-map = left,right
++direction = input
++paths-input = analog-input-linein
++
++[Mapping analog-stereo-mic-input]
++description = Analog Stereo Input
++device-strings = hw:%f,2,0
++channel-map = left,right
++direction = input
++paths-input = analog-input-mic
++
+-- 
+2.20.1
+

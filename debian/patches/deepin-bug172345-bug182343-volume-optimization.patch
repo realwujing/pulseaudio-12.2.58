@@ -1,0 +1,199 @@
+Index: pulseaudio/src/daemon/main.c
+===================================================================
+--- pulseaudio.orig/src/daemon/main.c
++++ pulseaudio/src/daemon/main.c
+@@ -378,6 +378,7 @@ int main(int argc, char *argv[]) {
+     int r = 0, retval = 1, d = 0;
+     bool valid_pid_file = false;
+     bool ltdl_init = false;
++    bool huawei_identification = false;
+     int n_fds = 0, *passed_fds = NULL;
+     const char *e;
+     const char *hw_info_path = "/etc/hw_version";
+@@ -487,7 +488,7 @@ int main(int argc, char *argv[]) {
+ 
+     if (pa_get_hw_info(hw_info_path, card_name)) {
+         pa_get_vendor_name(card_name, vendor_name);
+-
++        huawei_identification = true;
+         if (pa_platform_load(conf, vendor_name, card_name) < 0)
+             pa_log(_("Failed to load platform file."));
+     }
+@@ -1059,6 +1060,8 @@ int main(int argc, char *argv[]) {
+     c->running_as_daemon = conf->daemonize;
+     c->disallow_exit = conf->disallow_exit;
+     c->flat_volumes = conf->flat_volumes;
++    c->huawei_identity = huawei_identification;
++    set_pa_core(c);/* set core pointer  */
+ #ifdef HAVE_DBUS
+     c->server_type = conf->local_server_type;
+ #endif
+Index: pulseaudio/src/pulse/volume.c
+===================================================================
+--- pulseaudio.orig/src/pulse/volume.c
++++ pulseaudio/src/pulse/volume.c
+@@ -280,8 +280,10 @@ pa_volume_t pa_sw_volume_from_linear(dou
+      * We make sure that the conversion to linear and back yields the
+      * same volume value! That's why we need the lround() below!
+      */
+-
+-    return (pa_volume_t) PA_CLAMP_VOLUME((uint64_t) lround(cbrt(v) * PA_VOLUME_NORM));
++    if (get_huawei_identity() == 1)
++       return (pa_volume_t) PA_CLAMP_VOLUME((uint64_t) lround(cbrt(v) * PA_VOLUME_NORM));
++    else
++       return (pa_volume_t) PA_CLAMP_VOLUME((uint64_t) lround(pow(v,1/POW_VALUE18) * PA_VOLUME_NORM));
+ }
+ 
+ double pa_sw_volume_to_linear(pa_volume_t v) {
+@@ -296,8 +298,10 @@ double pa_sw_volume_to_linear(pa_volume_
+         return 1.0;
+ 
+     f = ((double) v / PA_VOLUME_NORM);
+-
+-    return f*f*f;
++   if (get_huawei_identity() == 1)
++      return f*f*f;
++   else
++      return pow(f,POW_VALUE18);
+ }
+ 
+ double pa_sw_volume_to_linear_expect(pa_volume_t v) {
+@@ -1014,3 +1018,20 @@ pa_cvolume* pa_cvolume_dec(pa_cvolume *v
+ 
+     return pa_cvolume_scale(v, m);
+ }
++
++int get_huawei_identity(){
++    int result;
++    pa_core *core = get_pa_core();
++    pa_assert(core);
++    if(core == NULL){
++      pa_log("faild identify");
++      return -1;
++    }
++
++    if(core->huawei_identity)
++      result = 1;
++    else result = 0;
++
++    return result;
++}
++
+Index: pulseaudio/src/pulse/volume.h
+===================================================================
+--- pulseaudio.orig/src/pulse/volume.h
++++ pulseaudio/src/pulse/volume.h
+@@ -119,6 +119,7 @@ typedef uint32_t pa_volume_t;
+ /** Normal volume (100%, 0 dB) */
+ #define PA_VOLUME_NORM ((pa_volume_t) 0x10000U)
+ #define POW_VALUE 1.5
++#define POW_VALUE18 1.8
+ 
+ /** Muted (minimal valid) volume (0%, -inf dB) */
+ #define PA_VOLUME_MUTED ((pa_volume_t) 0U)
+@@ -446,6 +447,9 @@ pa_cvolume* pa_cvolume_inc(pa_cvolume *v
+  * the channels are kept. Returns \a v, or NULL on error. \since 0.9.16 */
+ pa_cvolume* pa_cvolume_dec(pa_cvolume *v, pa_volume_t dec);
+ 
++/* identify huawei device  */
++int get_huawei_identity();
++
+ PA_C_DECL_END
+ 
+ #endif
+Index: pulseaudio/src/pulsecore/core-util.c
+===================================================================
+--- pulseaudio.orig/src/pulsecore/core-util.c
++++ pulseaudio/src/pulsecore/core-util.c
+@@ -142,6 +142,7 @@
+ #include <pulsecore/strlist.h>
+ #include <pulsecore/pipe.h>
+ #include <pulsecore/once.h>
++#include <pulsecore/core.h>
+ 
+ #include "core-util.h"
+ 
+@@ -154,6 +155,7 @@
+ #define WHITESPACE "\n\r \t"
+ 
+ static pa_strlist *recorded_env = NULL;
++const pa_core *pa_c = NULL;
+ 
+ #ifdef OS_IS_WIN32
+ static fd_set nonblocking_fds;
+@@ -3752,3 +3754,13 @@ size_t pa_page_size(void) {
+     return 4096;
+ #endif
+ }
++
++/* set pa_core and get pa_core  */
++void set_pa_core(const pa_core *c){
++     pa_assert(c);
++     pa_c = c;
++}
++
++const pa_core *get_pa_core(void){
++     return pa_c;
++}
+Index: pulseaudio/src/pulsecore/core-util.h
+===================================================================
+--- pulseaudio.orig/src/pulsecore/core-util.h
++++ pulseaudio/src/pulsecore/core-util.h
+@@ -37,6 +37,7 @@
+ #include <pulsecore/i18n.h>
+ #include <pulsecore/macro.h>
+ #include <pulsecore/socket.h>
++#include <pulsecore/core.h>
+ 
+ #ifndef PACKAGE
+ #error "Please include config.h before including this file!"
+@@ -81,6 +82,11 @@ char *pa_strlcpy(char *b, const char *s,
+ 
+ char *pa_parent_dir(const char *fn);
+ 
++/* Set core and get core to get huawei certificaition  */
++
++void set_pa_core(const pa_core *c);
++const pa_core *get_pa_core();
++
+ int pa_make_realtime(int rtprio);
+ int pa_raise_priority(int nice_level);
+ void pa_reset_priority(void);
+Index: pulseaudio/src/pulsecore/core.h
+===================================================================
+--- pulseaudio.orig/src/pulsecore/core.h
++++ pulseaudio/src/pulsecore/core.h
+@@ -222,6 +222,7 @@ struct pa_core {
+     bool remixing_use_all_sink_channels:1;
+     bool disable_lfe_remixing:1;
+     bool deferred_volume:1;
++    bool huawei_identity:1;
+ 
+     pa_resample_method_t resample_method;
+     int realtime_priority;
+Index: pulseaudio/src/pulsecore/mix.c
+===================================================================
+--- pulseaudio.orig/src/pulsecore/mix.c
++++ pulseaudio/src/pulsecore/mix.c
+@@ -29,6 +29,7 @@
+ #include <pulsecore/macro.h>
+ #include <pulsecore/g711.h>
+ #include <pulsecore/endianmacros.h>
++#include <pulsecore/core.h>
+ 
+ #include "cpu.h"
+ #include "mix.h"
+@@ -61,9 +62,10 @@ static void calc_linear_integer_volume(i
+ 
+     for (channel = 0; channel < nchannels; channel++)
+         linear[channel] = (int32_t) lrint(pa_sw_volume_to_linear(volume->values[channel]) * 0x10000);
+-
+-    for (channel = 0; channel < nchannels; channel++)
+-        linear[channel] = pa_volume_optimize(linear[channel]);
++    if (get_huawei_identity() == 1){
++       for (channel = 0; channel < nchannels; channel++)
++           linear[channel] = pa_volume_optimize(linear[channel]);
++    }
+ 
+     for (padding = 0; padding < VOLUME_PADDING; padding++, channel++)
+         linear[channel] = linear[padding];

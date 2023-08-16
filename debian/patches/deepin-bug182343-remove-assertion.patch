@@ -1,0 +1,12 @@
+Index: pulseaudio/src/pulse/volume.c
+===================================================================
+--- pulseaudio.orig/src/pulse/volume.c
++++ pulseaudio/src/pulse/volume.c
+@@ -1022,7 +1022,6 @@ pa_cvolume* pa_cvolume_dec(pa_cvolume *v
+ int get_huawei_identity(){
+     int result;
+     pa_core *core = get_pa_core();
+-    pa_assert(core);
+     if(core == NULL){
+       pa_log("faild identify");
+       return -1;

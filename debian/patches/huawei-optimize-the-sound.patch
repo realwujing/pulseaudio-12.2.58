@@ -1,0 +1,114 @@
+diff --git a/src/pulse/volume.c b/src/pulse/volume.c
+index ead5415..92a48b9 100644
+--- a/src/pulse/volume.c
++++ b/src/pulse/volume.c
+@@ -257,6 +257,15 @@ double pa_sw_volume_to_dB(pa_volume_t v) {
+     return linear_to_dB(pa_sw_volume_to_linear(v));
+ }
+ 
++double pa_sw_volume_to_dB_expect(pa_volume_t v) {
++    pa_return_val_if_fail(PA_VOLUME_IS_VALID(v), PA_DECIBEL_MININFTY);
++
++    if (v <= PA_VOLUME_MUTED)
++        return PA_DECIBEL_MININFTY;
++
++    return linear_to_dB(pa_sw_volume_to_linear_expect(v));
++}
++
+ pa_volume_t pa_sw_volume_from_linear(double v) {
+ 
+     if (v <= 0.0)
+@@ -291,6 +300,22 @@ double pa_sw_volume_to_linear(pa_volume_t v) {
+     return f*f*f;
+ }
+ 
++double pa_sw_volume_to_linear_expect(pa_volume_t v) {
++    double f;
++
++    pa_return_val_if_fail(PA_VOLUME_IS_VALID(v), 0.0);
++
++    if (v <= PA_VOLUME_MUTED)
++        return 0.0;
++
++    if (v == PA_VOLUME_NORM)
++        return 1.0;
++
++    f = ((double) v / PA_VOLUME_NORM);
++
++    return pow(f, POW_VALUE);
++}
++
+ char *pa_cvolume_snprint(char *s, size_t l, const pa_cvolume *c) {
+     unsigned channel;
+     bool first = true;
+diff --git a/src/pulse/volume.h b/src/pulse/volume.h
+index 2503c3f..00e1923 100644
+--- a/src/pulse/volume.h
++++ b/src/pulse/volume.h
+@@ -118,6 +118,7 @@ typedef uint32_t pa_volume_t;
+ 
+ /** Normal volume (100%, 0 dB) */
+ #define PA_VOLUME_NORM ((pa_volume_t) 0x10000U)
++#define POW_VALUE 1.5
+ 
+ /** Muted (minimal valid) volume (0%, -inf dB) */
+ #define PA_VOLUME_MUTED ((pa_volume_t) 0U)
+@@ -311,6 +312,10 @@ pa_volume_t pa_sw_volume_from_dB(double f) PA_GCC_CONST;
+ /** Convert a volume to a decibel value (amplitude, not power). This is only valid for software volumes! */
+ double pa_sw_volume_to_dB(pa_volume_t v) PA_GCC_CONST;
+ 
++/** Add for Pangu **/
++double pa_sw_volume_to_dB_expect(pa_volume_t v) PA_GCC_CONST;
++/** Add end **/
++
+ /** Convert a linear factor to a volume. 0.0 and less is muted while
+  * 1.0 is PA_VOLUME_NORM. This is only valid for software volumes! */
+ pa_volume_t pa_sw_volume_from_linear(double v) PA_GCC_CONST;
+@@ -318,6 +323,10 @@ pa_volume_t pa_sw_volume_from_linear(double v) PA_GCC_CONST;
+ /** Convert a volume to a linear factor. This is only valid for software volumes! */
+ double pa_sw_volume_to_linear(pa_volume_t v) PA_GCC_CONST;
+ 
++/** Add for Pangu **/
++double pa_sw_volume_to_linear_expect(pa_volume_t v) PA_GCC_CONST;
++/** Add end **/
++
+ #ifdef INFINITY
+ #define PA_DECIBEL_MININFTY ((double) -INFINITY)
+ #else
+diff --git a/src/pulsecore/mix.c b/src/pulsecore/mix.c
+index 59622d7..fae853d 100644
+--- a/src/pulsecore/mix.c
++++ b/src/pulsecore/mix.c
+@@ -34,6 +34,22 @@
+ #include "mix.h"
+ 
+ #define VOLUME_PADDING 32
++#define PA_SQRT1 60
++
++static int32_t pa_volume_optimize(int32_t volume)
++{
++    unsigned channel;
++    double f;
++    f = pa_sw_volume_to_dB_expect(volume);
++    if(volume <= PA_VOLUME_MUTED) {
++        volume = PA_VOLUME_MUTED;
++    } else if (volume < PA_VOLUME_NORM) {
++    volume = (int32_t)((pow(10, f/PA_SQRT1)) * PA_VOLUME_NORM);
++    } else {
++        volume = PA_VOLUME_NORM;
++    }
++    return volume;
++}
+ 
+ static void calc_linear_integer_volume(int32_t linear[], const pa_cvolume *volume) {
+     unsigned channel, nchannels, padding;
+@@ -46,6 +62,9 @@ static void calc_linear_integer_volume(int32_t linear[], const pa_cvolume *volum
+     for (channel = 0; channel < nchannels; channel++)
+         linear[channel] = (int32_t) lrint(pa_sw_volume_to_linear(volume->values[channel]) * 0x10000);
+ 
++    for (channel = 0; channel < nchannels; channel++)
++        linear[channel] = pa_volume_optimize(linear[channel]);
++
+     for (padding = 0; padding < VOLUME_PADDING; padding++, channel++)
+         linear[channel] = linear[padding];
+ }

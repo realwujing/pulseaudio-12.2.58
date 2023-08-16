@@ -1,0 +1,24 @@
+From 75f6f44208749f7aa05ef8421529c97bfe9e87a8 Mon Sep 17 00:00:00 2001
+From: zhaochengyi <zhaochengyi@uniontech.com>
+Date: Fri, 20 May 2022 16:20:32 +0800
+Subject: [PATCH] Set volume with ignored DB for Philips SPA2100
+
+---
+ src/modules/alsa/mixer/profile-sets/90-pulseaudio.rules | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/src/modules/alsa/mixer/profile-sets/90-pulseaudio.rules b/src/modules/alsa/mixer/profile-sets/90-pulseaudio.rules
+index 86c16ea..3d0dd63 100644
+--- a/src/modules/alsa/mixer/profile-sets/90-pulseaudio.rules
++++ b/src/modules/alsa/mixer/profile-sets/90-pulseaudio.rules
+@@ -126,5 +126,7 @@ ATTRS{idVendor}=="0bda", ATTRS{idProduct}=="4f05", ENV{PULSE_PROFILE_SET}="dahua
+ # for ignore_dB
+ # Huawei
+ ATTRS{idVendor}=="31b2", ATTRS{idProduct}=="0011", ENV{PULSE_VOLUME_IGNORE_DB}="1"
++# Philips SPA2100
++ATTRS{idVendor}=="e5b7", ATTRS{idProduct}=="0811", ENV{PULSE_VOLUME_IGNORE_DB}="1"
+ 
+ LABEL="pulseaudio_end"
+-- 
+2.20.1
+

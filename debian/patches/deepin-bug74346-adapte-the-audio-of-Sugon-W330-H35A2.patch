@@ -1,0 +1,86 @@
+From 57f71eb789ae4bec5a1fb60612225ae57dffd187 Mon Sep 17 00:00:00 2001
+From: Chengyi Zhao <zhaochengyi@uniontech.com>
+Date: Thu, 20 May 2021 13:54:02 +0800
+Subject: [PATCH] adapte the audio of Sugon W330-H35A2
+
+---
+ src/modules/alsa/mixer/paths/analog-input-front-mic.conf   | 3 +++
+ src/modules/alsa/mixer/paths/analog-input-linein.conf      | 3 +++
+ src/modules/alsa/mixer/paths/analog-input-rear-mic.conf    | 3 +++
+ src/modules/alsa/mixer/paths/analog-output-headphones.conf | 3 +++
+ src/modules/alsa/mixer/paths/analog-output-speaker.conf    | 3 +++
+ 5 files changed, 15 insertions(+)
+
+diff --git a/src/modules/alsa/mixer/paths/analog-input-front-mic.conf b/src/modules/alsa/mixer/paths/analog-input-front-mic.conf
+index 9295d80..4007205 100644
+--- a/src/modules/alsa/mixer/paths/analog-input-front-mic.conf
++++ b/src/modules/alsa/mixer/paths/analog-input-front-mic.conf
+@@ -24,6 +24,9 @@ description-key = analog-input-microphone-front
+ [Jack Front Mic]
+ required-any = any
+ 
++[Jack Front Mic - Input]
++required-any = any
++
+ [Jack Front Mic Phantom]
+ required-any = any
+ state.plugged = unknown
+diff --git a/src/modules/alsa/mixer/paths/analog-input-linein.conf b/src/modules/alsa/mixer/paths/analog-input-linein.conf
+index 8163ffb..574a634 100644
+--- a/src/modules/alsa/mixer/paths/analog-input-linein.conf
++++ b/src/modules/alsa/mixer/paths/analog-input-linein.conf
+@@ -23,6 +23,9 @@ priority = 81
+ [Jack Line]
+ required-any = any
+ 
++[Jack Line - Input]
++required-any = any
++
+ [Jack Line Phantom]
+ required-any = any
+ state.plugged = unknown
+diff --git a/src/modules/alsa/mixer/paths/analog-input-rear-mic.conf b/src/modules/alsa/mixer/paths/analog-input-rear-mic.conf
+index 7136193..a92f9d1 100644
+--- a/src/modules/alsa/mixer/paths/analog-input-rear-mic.conf
++++ b/src/modules/alsa/mixer/paths/analog-input-rear-mic.conf
+@@ -24,6 +24,9 @@ description-key = analog-input-microphone-rear
+ [Jack Rear Mic]
+ required-any = any
+ 
++[Jack Rear Mic - Input]
++required-any = any
++
+ [Jack Rear Mic Phantom]
+ required-any = any
+ state.plugged = unknown
+diff --git a/src/modules/alsa/mixer/paths/analog-output-headphones.conf b/src/modules/alsa/mixer/paths/analog-output-headphones.conf
+index 82da408..a1d940b 100644
+--- a/src/modules/alsa/mixer/paths/analog-output-headphones.conf
++++ b/src/modules/alsa/mixer/paths/analog-output-headphones.conf
+@@ -46,6 +46,9 @@ state.unplugged = unknown
+ [Jack Headphone]
+ required-any = any
+ 
++[Jack Headphone - Output]
++required-any = any
++
+ [Jack Headphone Phantom]
+ required-any = any
+ state.plugged = unknown
+diff --git a/src/modules/alsa/mixer/paths/analog-output-speaker.conf b/src/modules/alsa/mixer/paths/analog-output-speaker.conf
+index 9f4dac4..8b1115d 100644
+--- a/src/modules/alsa/mixer/paths/analog-output-speaker.conf
++++ b/src/modules/alsa/mixer/paths/analog-output-speaker.conf
+@@ -66,6 +66,9 @@ required-any = any
+ state.plugged = unknown
+ state.unplugged = unknown
+ 
++[Jack Desktop Speaker - Output]
++required-any = any
++
+ [Element Hardware Master]
+ switch = mute
+ volume = merge
+-- 
+2.20.1
+

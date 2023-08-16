@@ -1,0 +1,433 @@
+Index: pulseaudio/src/modules/alsa/mixer/paths/cust/10ec-129e/analog-input-front-mic.conf
+===================================================================
+--- /dev/null
++++ pulseaudio/src/modules/alsa/mixer/paths/cust/10ec-129e/analog-input-front-mic.conf
+@@ -0,0 +1,113 @@
++# This file is part of PulseAudio.
++#
++# PulseAudio is free software; you can redistribute it and/or modify
++# it under the terms of the GNU Lesser General Public License as
++# published by the Free Software Foundation; either version 2.1 of the
++# License, or (at your option) any later version.
++#
++# PulseAudio is distributed in the hope that it will be useful, but
++# WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
++# General Public License for more details.
++#
++# You should have received a copy of the GNU Lesser General Public License
++# along with PulseAudio; if not, see <http://www.gnu.org/licenses/>.
++
++; For devices where a 'Front Mic' or 'Front Mic Boost' element exists
++;
++; See analog-output.conf.common for an explanation on the directives
++
++[General]
++priority = 85
++description-key = analog-input-microphone-front
++
++[Properties]
++device.description = custom device 10ec-129e
++
++[Jack Front Mic]
++required-any = any
++
++[Jack Front Mic - Input]
++required-any = any
++
++[Jack Front Mic Phantom]
++required-any = any
++state.plugged = unknown
++state.unplugged = unknown
++
++[Jack Front Line Out Front]
++required-any = any
++
++[Element Capture]
++switch = mute
++volume = merge
++override-map.1 = all
++override-map.2 = all-left,all-right
++
++[Element Front Mic Boost]
++required-any = any
++switch = select
++volume = ignore
++override-map.1 = all
++override-map.2 = all-left,all-right
++
++[Option Front Mic Boost:on]
++name = input-boost-on
++
++[Option Front Mic Boost:off]
++name = input-boost-off
++
++[Element Front Mic]
++required-any = any
++switch = mute
++volume = merge
++override-map.1 = all
++override-map.2 = all-left,all-right
++
++[Element Input Source]
++enumeration = select
++
++[Option Input Source:Front Mic]
++name = analog-input-microphone-front
++required-any = any
++
++[Element Capture Source]
++enumeration = select
++
++[Option Capture Source:Front Mic]
++name = analog-input-microphone-front
++required-any = any
++
++[Element Mic]
++switch = off
++volume = off
++
++[Element Internal Mic]
++switch = off
++volume = off
++
++[Element Rear Mic]
++switch = off
++volume = off
++
++[Element Dock Mic]
++switch = off
++volume = off
++
++[Element Mic Boost]
++switch = off
++volume = off
++
++[Element Dock Mic Boost]
++switch = off
++volume = off
++
++[Element Internal Mic Boost]
++switch = off
++volume = off
++
++[Element Rear Mic Boost]
++switch = off
++volume = off
++
++.include ./../../analog-input-mic.conf.common
+Index: pulseaudio/src/modules/alsa/mixer/paths/cust/10ec-129e/analog-input-rear-mic.conf
+===================================================================
+--- /dev/null
++++ pulseaudio/src/modules/alsa/mixer/paths/cust/10ec-129e/analog-input-rear-mic.conf
+@@ -0,0 +1,110 @@
++# This file is part of PulseAudio.
++#
++# PulseAudio is free software; you can redistribute it and/or modify
++# it under the terms of the GNU Lesser General Public License as
++# published by the Free Software Foundation; either version 2.1 of the
++# License, or (at your option) any later version.
++#
++# PulseAudio is distributed in the hope that it will be useful, but
++# WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
++# General Public License for more details.
++#
++# You should have received a copy of the GNU Lesser General Public License
++# along with PulseAudio; if not, see <http://www.gnu.org/licenses/>.
++
++; For devices where a 'Rear Mic' or 'Rear Mic Boost' element exists
++;
++; See analog-output.conf.common for an explanation on the directives
++
++[General]
++priority = 82
++description-key = analog-input-microphone-rear
++
++[Properties]
++device.description = custom device 10ec-129e 
++
++[Jack Rear Mic]
++required-any = any
++
++[Jack Rear Mic - Input]
++required-any = any
++
++[Jack Rear Mic Phantom]
++required-any = any
++state.plugged = unknown
++state.unplugged = unknown
++
++[Element Capture]
++switch = mute
++volume = merge
++override-map.1 = all
++override-map.2 = all-left,all-right
++
++[Element Rear Mic Boost]
++required-any = any
++switch = select
++volume = ignore 
++override-map.1 = all
++override-map.2 = all-left,all-right
++
++[Option Rear Mic Boost:on]
++name = input-boost-on
++
++[Option Rear Mic Boost:off]
++name = input-boost-off
++
++[Element Rear Mic]
++required-any = any
++switch = mute
++volume = merge
++override-map.1 = all
++override-map.2 = all-left,all-right
++
++[Element Input Source]
++enumeration = select
++
++[Option Input Source:Rear Mic]
++name = analog-input-microphone-rear
++required-any = any
++
++[Element Capture Source]
++enumeration = select
++
++[Option Capture Source:Rear Mic]
++name = analog-input-microphone-rear
++required-any = any
++
++[Element Mic]
++switch = off
++volume = off
++
++[Element Internal Mic]
++switch = off
++volume = off
++
++[Element Front Mic]
++switch = off
++volume = off
++
++[Element Dock Mic]
++switch = off
++volume = off
++
++[Element Mic Boost]
++switch = off
++volume = off
++
++[Element Dock Mic Boost]
++switch = off
++volume = off
++
++[Element Internal Mic Boost]
++switch = off
++volume = off
++
++[Element Front Mic Boost]
++switch = off
++volume = off
++
++.include ./../../analog-input-mic.conf.common
+Index: pulseaudio/src/Makefile.am
+===================================================================
+--- pulseaudio.orig/src/Makefile.am
++++ pulseaudio/src/Makefile.am
+@@ -31,6 +31,7 @@ if HAVE_ALSA
+ alsaprofilesetsdir=$(datadir)/pulseaudio/alsa-mixer/profile-sets
+ alsapathsdir=$(datadir)/pulseaudio/alsa-mixer/paths
+ custalsapaths1d17_3288dir=$(datadir)/pulseaudio/alsa-mixer/paths/cust/1d17-3288
++custalsapaths10ec_129edir=$(datadir)/pulseaudio/alsa-mixer/paths/cust/10ec-129e
+ custalsapathsCP320Fdir=$(datadir)/pulseaudio/alsa-mixer/paths/cust/CP320F
+ endif
+ if HAVE_DBUS
+@@ -1384,6 +1385,11 @@ dist_custalsapaths1d17_3288_DATA = \
+ 		modules/alsa/mixer/paths/cust/1d17-3288/analog-input-internal-mic.conf \
+ 		modules/alsa/mixer/paths/cust/1d17-3288/analog-input-mic.conf
+ 
++dist_custalsapaths10ec_129e_DATA = \
++		modules/alsa/mixer/paths/cust/10ec-129e/analog-input-front-mic.conf \
++		modules/alsa/mixer/paths/cust/10ec-129e/analog-input-rear-mic.conf \
++		modules/alsa/mixer/paths/cust/10ec-129e/analog-input-internal-mic.conf
++
+ dist_custalsapathsCP320F_DATA = \
+                 modules/alsa/mixer/paths/cust/CP320F/analog-input-internal-mic.conf \
+                 modules/alsa/mixer/paths/cust/CP320F/analog-input-mic.conf
+Index: pulseaudio/src/modules/alsa/mixer/paths/cust/10ec-129e/analog-input-internal-mic.conf
+===================================================================
+--- /dev/null
++++ pulseaudio/src/modules/alsa/mixer/paths/cust/10ec-129e/analog-input-internal-mic.conf
+@@ -0,0 +1,157 @@
++# This file is part of PulseAudio.
++#
++# PulseAudio is free software; you can redistribute it and/or modify
++# it under the terms of the GNU Lesser General Public License as
++# published by the Free Software Foundation; either version 2.1 of the
++# License, or (at your option) any later version.
++#
++# PulseAudio is distributed in the hope that it will be useful, but
++# WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
++# General Public License for more details.
++#
++# You should have received a copy of the GNU Lesser General Public License
++# along with PulseAudio; if not, see <http://www.gnu.org/licenses/>.
++
++; For devices where a 'Internal Mic' or 'Internal Mic Boost' element exists
++; 'Int Mic' and 'Int Mic Boost' are for compatibility with kernels < 2.6.38
++;
++; See analog-output.conf.common for an explanation on the directives
++
++[General]
++priority = 89
++description-key = analog-input-microphone-internal
++
++[Properties]
++device.description = custom device 10ec-129e 
++
++[Jack Mic]
++state.plugged = no
++state.unplugged = unknown
++
++[Jack Dock Mic]
++state.plugged = no
++state.unplugged = unknown
++
++[Jack Front Mic]
++state.plugged = no
++state.unplugged = unknown
++
++[Jack Rear Mic]
++state.plugged = no
++state.unplugged = unknown
++
++[Jack Internal Mic Phantom]
++state.plugged = unknown
++state.unplugged = unknown
++required-any = any
++
++[Element Capture]
++switch = mute
++volume = merge
++override-map.1 = all
++override-map.2 = all-left,all-right
++
++[Element Internal Mic Boost]
++required-any = any
++switch = select
++volume = ignore
++override-map.1 = all
++override-map.2 = all-left,all-right
++
++[Option Internal Mic Boost:on]
++name = input-boost-on
++
++[Option Internal Mic Boost:off]
++name = input-boost-off
++
++[Element Int Mic Boost]
++required-any = any
++switch = select
++volume = merge
++override-map.1 = all
++override-map.2 = all-left,all-right
++
++[Option Int Mic Boost:on]
++name = input-boost-on
++
++[Option Int Mic Boost:off]
++name = input-boost-off
++
++[Element Internal Mic]
++required-any = any
++switch = mute
++volume = merge
++override-map.1 = all
++override-map.2 = all-left,all-right
++
++[Element Int Mic]
++required-any = any
++switch = mute
++volume = merge
++override-map.1 = all
++override-map.2 = all-left,all-right
++
++[Element Input Source]
++enumeration = select
++
++[Option Input Source:Internal Mic]
++name = analog-input-microphone-internal
++required-any = any
++
++[Option Input Source:Int Mic]
++name = analog-input-microphone-internal
++required-any = any
++
++[Element Capture Source]
++enumeration = select
++
++[Option Capture Source:Internal Mic]
++name = analog-input-microphone-internal
++required-any = any
++
++[Option Capture Source:Int Mic]
++name = analog-input-microphone-internal
++required-any = any
++
++[Element Mic]
++switch = off
++volume = off
++
++[Element Dock Mic]
++switch = off
++volume = off
++
++[Element Front Mic]
++switch = off
++volume = off
++
++[Element Rear Mic]
++switch = off
++volume = off
++
++[Element Headphone Mic]
++switch = off
++volume = off
++
++[Element Headphone Mic Boost]
++switch = off
++volume = off
++
++[Element Mic Boost]
++switch = off
++volume = off
++
++[Element Dock Mic Boost]
++switch = off
++volume = off
++
++[Element Front Mic Boost]
++switch = off
++volume = off
++
++[Element Rear Mic Boost]
++switch = off
++volume = off
++
++.include ./../../analog-input-mic.conf.common
+Index: pulseaudio/src/modules/alsa/mixer/profile-sets/90-pulseaudio.rules
+===================================================================
+--- pulseaudio.orig/src/modules/alsa/mixer/profile-sets/90-pulseaudio.rules
++++ pulseaudio/src/modules/alsa/mixer/profile-sets/90-pulseaudio.rules
+@@ -93,6 +93,9 @@ ATTRS{vendor}=="0x0014", ATTRS{device}==
+ # NM14KG-326
+ ATTRS{subsystem_vendor}=="0x1d17", ATTRS{subsystem_device}=="0x3288", ENV{PULSE_CUST_PATH_SET}="1d17-3288"
+ 
++# NM14KG-326-Desktop-computer
++ATTRS{subsystem_vendor}=="0x10ec", ATTRS{subsystem_device}=="0x129e", ENV{PULSE_CUST_PATH_SET}="10ec-129e"
++
+ # GOTO="pulseaudio_end"
+ 
+ LABEL="pulseaudio_check_usb"

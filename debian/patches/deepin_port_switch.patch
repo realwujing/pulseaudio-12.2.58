@@ -1,0 +1,258 @@
+From: jouyouyun <jouyouwen717@gmail.com>
+Date: Tue, 31 Oct 2019 15:45:12 +0800
+Subject: fix hdmi port switch failure
+---
+diff --git a/src/modules/module-switch-on-port-available.c b/src/modules/module-switch-on-port-available.c
+index 321db36..e67d3d4 100644
+--- a/src/modules/module-switch-on-port-available.c
++++ b/src/modules/module-switch-on-port-available.c
+@@ -23,14 +23,25 @@
+ #endif
+ 
+ #include <pulsecore/core.h>
++#include <pulsecore/sink-input.h>
++#include <pulsecore/source-output.h>
++#include <pulsecore/source.h>
+ #include <pulsecore/core-util.h>
+ #include <pulsecore/device-port.h>
+ #include <pulsecore/hashmap.h>
++#include <pulsecore/modargs.h>
+ 
+ PA_MODULE_AUTHOR("David Henningsson");
+ PA_MODULE_DESCRIPTION("Switches ports and profiles when devices are plugged/unplugged");
+ PA_MODULE_LOAD_ONCE(true);
+ PA_MODULE_VERSION(PACKAGE_VERSION);
++PA_MODULE_USAGE(
++   "hdmi-force=<true/false?>");
++
++static const char* const valid_modargs[] = {
++    "hdmi-force",
++    NULL
++};
+ 
+ struct card_info {
+     struct userdata *userdata;
+@@ -44,6 +55,7 @@ struct card_info {
+ 
+ struct userdata {
+     pa_hashmap *card_infos; /* pa_card -> struct card_info */
++    bool hdmi_force;
+ };
+ 
+ static void card_info_new(struct userdata *u, pa_card *card) {
+@@ -71,6 +83,9 @@ static bool profile_good_for_output(pa_card_profile *profile, pa_device_port *po
+ 
+     card = profile->card;
+ 
++    if (!(card->active_profile))
++        return false;
++
+     if (!pa_safe_streq(card->active_profile->input_name, profile->input_name))
+         return false;
+ 
+@@ -103,6 +118,9 @@ static bool profile_good_for_input(pa_card_profile *profile, pa_device_port *por
+ 
+     card = profile->card;
+ 
++    if (!(card->active_profile))
++        return false;
++
+     if (!pa_safe_streq(card->active_profile->output_name, profile->output_name))
+         return false;
+ 
+@@ -135,6 +153,8 @@ static int try_to_switch_profile(pa_device_port *port) {
+                  port->name, pa_strnull(port->preferred_profile));
+ 
+     PA_HASHMAP_FOREACH(profile, port->profiles, state) {
++        if (!profile)
++            continue;
+         bool good = false;
+         const char *name;
+         unsigned prio = profile->priority;
+@@ -179,6 +199,74 @@ static int try_to_switch_profile(pa_device_port *port) {
+     return 0;
+ }
+ 
++static int hdmi_try_to_switch_profile(pa_device_port *port) {
++    pa_card_profile *best_profile = NULL, *profile;
++    void *state;
++    unsigned best_prio = 0;
++
++    pa_log_debug("Finding best profile for port %s, preferred = %s",
++                 port->name, pa_strnull(port->preferred_profile));
++
++    PA_HASHMAP_FOREACH(profile, port->profiles, state) {
++        if (!profile)
++            continue;
++        const char *name;
++        unsigned prio = profile->priority;
++
++        /* We make a best effort to keep other direction unchanged */
++        switch (port->direction) {
++        case PA_DIRECTION_OUTPUT:
++            name = profile->output_name;
++            break;
++        case PA_DIRECTION_INPUT:
++            name = profile->input_name;
++            break;
++        }
++
++        /* Give a high bonus in case this is the preferred profile */
++        if (port->preferred_profile && pa_streq(name ? name : profile->name, port->preferred_profile))
++            prio += 1000000;
++
++        if (best_profile && best_prio >= prio)
++            continue;
++
++        best_profile = profile;
++        best_prio = prio;
++    }
++
++    if (!best_profile) {
++        pa_log_debug("No suitable profile found");
++        return -1;
++    }
++
++    if (pa_card_set_profile(port->card, best_profile, true) != 0) {
++        pa_log_debug("Could not set profile %s", best_profile->name);
++        return -1;
++    }
++
++    return 0;
++}
++
++static int is_find_cur_port(pa_device_port* port) {
++    if (!port || !port->card)
++        return 0;
++
++    if (!port->card->active_profile)
++        return 0;
++
++    pa_card_profile *profile;
++    void *state;
++    PA_HASHMAP_FOREACH(profile, port->profiles, state) {
++        if (!profile)
++            continue;
++
++        if (pa_safe_streq(profile->name , port->card->active_profile->name))
++            return 1;
++    }
++
++    return 0;
++}
++
+ struct port_pointers {
+     pa_device_port *port;
+     pa_sink *sink;
+@@ -204,6 +292,10 @@ static struct port_pointers find_port_pointers(pa_device_port *port) {
+     pa_assert(port);
+     pa_assert_se(card = port->card);
+ 
++    if (!port->card->active_profile) {
++       pa_log_debug("is not valid active profile");
++    }
++
+     switch (port->direction) {
+         case PA_DIRECTION_OUTPUT:
+             PA_IDXSET_FOREACH(pp.sink, card->sinks, state)
+@@ -236,13 +328,23 @@ static void switch_to_port(pa_device_port *port) {
+ 
+     pa_log_debug("Trying to switch to port %s", port->name);
+     if (!pp.is_preferred_profile_active) {
+-        if (try_to_switch_profile(port) < 0) {
+-            if (!pp.is_possible_profile_active)
+-                return;
++        if ((pa_startswith(port->name, "hdmi") || pa_startswith(port->name, "HDMI"))) {
++            if (hdmi_try_to_switch_profile(port) < 0) {
++                if (!pp.is_possible_profile_active)
++                    return;
++            } else {
++                /* Now that profile has changed, our sink and source pointers must be updated */
++                pp = find_port_pointers(port);
++            }
++        } else {
++            if (try_to_switch_profile(port) < 0) {
++                if (!pp.is_possible_profile_active)
++                    return;
++            } else {
++                /* Now that profile has changed, our sink and source pointers must be updated */
++                pp = find_port_pointers(port);
++            }
+         }
+-        else
+-            /* Now that profile has changed, our sink and source pointers must be updated */
+-            pp = find_port_pointers(port);
+     }
+ 
+     if (pp.source)
+@@ -272,8 +374,7 @@ static void switch_from_port(pa_device_port *port) {
+         switch_to_port(best_port);
+ }
+ 
+-
+-static pa_hook_result_t port_available_hook_callback(pa_core *c, pa_device_port *port, void* userdata) {
++static pa_hook_result_t port_available_hook_callback(pa_core *c, pa_device_port *port, struct userdata *u) {
+     pa_assert(port);
+ 
+     if (!port->card) {
+@@ -281,6 +382,21 @@ static pa_hook_result_t port_available_hook_callback(pa_core *c, pa_device_port
+         return PA_HOOK_OK;
+     }
+ 
++    pa_log_debug("sink source size : %d %d", pa_idxset_size(port->card->sinks), pa_idxset_size(port->card->sources));
++    if (pa_idxset_size(port->card->sinks) == 0 && pa_idxset_size(port->card->sources) == 0) {
++        /* This card is not initialized yet. We'll handle it in
++            sink_new / source_new callbacks later. */
++        bool is_hdmi_card = (pa_startswith(port->name, "hdmi") || pa_startswith(port->name, "HDMI"));
++        pa_log_debug("is hdmi card and hdmi force : %d - %d", is_hdmi_card, u->hdmi_force);
++        if (u->hdmi_force && is_hdmi_card && port->available == PA_AVAILABLE_YES) {
++            if (!is_find_cur_port(port)) {
++                if (hdmi_try_to_switch_profile(port) < 0)
++                    pa_log_debug("Failed switch to profile");
++            }
++        }
++        return PA_HOOK_OK;
++    }
++
+     /* Our profile switching logic caused trouble with bluetooth headsets (see
+      * https://bugs.freedesktop.org/show_bug.cgi?id=107044) and
+      * module-bluetooth-policy takes care of automatic profile switching
+@@ -492,8 +608,20 @@ int pa__init(pa_module*m) {
+ 
+     pa_assert(m);
+ 
++    pa_modargs* ma = NULL;
++    bool hdmi_force = true;
++
++    if (!(ma = pa_modargs_new(m->argument, valid_modargs))) {
++        pa_log("failed to parse module arguments");
++    } else {
++        if (pa_modargs_get_value_boolean(ma, "hdmi-force", &hdmi_force) < 0) {
++            pa_log("hdmi-force=");
++        }
++    }
++
+     u = m->userdata = pa_xnew0(struct userdata, 1);
+     u->card_infos = pa_hashmap_new(NULL, NULL);
++    u->hdmi_force = hdmi_force;
+ 
+     PA_IDXSET_FOREACH(card, m->core->cards, idx)
+         card_info_new(u, card);
+@@ -504,7 +632,7 @@ int pa__init(pa_module*m) {
+     pa_module_hook_connect(m, &m->core->hooks[PA_CORE_HOOK_SOURCE_NEW],
+                            PA_HOOK_NORMAL, (pa_hook_cb_t) source_new_hook_callback, NULL);
+     pa_module_hook_connect(m, &m->core->hooks[PA_CORE_HOOK_PORT_AVAILABLE_CHANGED],
+-                           PA_HOOK_LATE, (pa_hook_cb_t) port_available_hook_callback, NULL);
++                           PA_HOOK_LATE, (pa_hook_cb_t) port_available_hook_callback, u);
+     pa_module_hook_connect(m, &m->core->hooks[PA_CORE_HOOK_CARD_PUT],
+                            PA_HOOK_NORMAL, (pa_hook_cb_t) card_put_hook_callback, u);
+     pa_module_hook_connect(m, &m->core->hooks[PA_CORE_HOOK_CARD_UNLINK],
+@@ -518,6 +646,8 @@ int pa__init(pa_module*m) {
+ 
+     handle_all_unavailable(m->core);
+ 
++    pa_modargs_free(ma);
++
+     return 0;
+ }
+ 

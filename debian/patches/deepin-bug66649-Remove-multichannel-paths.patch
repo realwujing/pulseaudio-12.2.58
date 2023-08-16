@@ -1,0 +1,34 @@
+From e70d34ae1882544a57d61ccbd690cf46ce090d0c Mon Sep 17 00:00:00 2001
+From: Tanu Kaskinen <tanuk@iki.fi>
+Date: Sat, 31 Oct 2020 12:00:54 +0200
+Subject: [PATCH 3/3] alsa-mixer: Remove references to non-existent
+ multichannel paths
+
+We don't have any mixer configuration for the multichannel mappings.
+---
+ src/modules/alsa/mixer/profile-sets/default.conf | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/src/modules/alsa/mixer/profile-sets/default.conf b/src/modules/alsa/mixer/profile-sets/default.conf
+index c517d2b95..92f23d272 100644
+--- a/src/modules/alsa/mixer/profile-sets/default.conf
++++ b/src/modules/alsa/mixer/profile-sets/default.conf
+@@ -464,7 +464,6 @@ exact-channels = false
+ fallback = yes
+ priority = 1
+ direction = output
+-paths-output = multichannel-output
+ 
+ [Mapping multichannel-input]
+ device-strings = hw:%f
+@@ -473,7 +472,6 @@ exact-channels = false
+ fallback = yes
+ priority = 1
+ direction = input
+-paths-input = multichannel-input
+ 
+ ; An example for defining multiple-sink profiles
+ #[Profile output:analog-stereo+output:iec958-stereo+input:analog-stereo]
+-- 
+2.20.1
+

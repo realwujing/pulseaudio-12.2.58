@@ -1,0 +1,77 @@
+Index: pulseaudio/src/modules/module-huawei-adapter.c
+===================================================================
+--- pulseaudio.orig/src/modules/module-huawei-adapter.c	2022-09-23 14:12:32.306776636 +0800
++++ pulseaudio/src/modules/module-huawei-adapter.c	2022-09-23 14:17:50.139507524 +0800
+@@ -819,12 +819,16 @@
+     pa_assert(y);
+     pa_assert(u);
+     pa_assert(d->source);
++    pa_assert(d->core);
+     pa_log_debug("enter hook %s",__func__);
+ 
+     if(d->default_source){
+         if(d->default_source->priority >= d->source->priority){
+             if(!(strcmp(d->default_source->name, "bt_sco_source") == 0 && strstr(d->source->name, "bluez") != NULL)){
+                 pa_log_debug("default source priority is higher, no need to change");
++                pa_core_set_configured_default_source(d->core, d->default_source->name);
++                pa_subscription_post(d->core, PA_SUBSCRIPTION_EVENT_SERVER | PA_SUBSCRIPTION_EVENT_CHANGE, PA_INVALID_INDEX);
++                pa_hook_fire(&(d->core)->hooks[PA_CORE_HOOK_DEFAULT_SOURCE_CHANGED], d->core->default_source);
+                 d->ret = 0;
+             }
+         }
+@@ -839,12 +843,16 @@
+     pa_assert(y);
+     pa_assert(u);
+     pa_assert(d->sink);
++    pa_assert(d->core);
+     pa_log_debug("enter hook %s",__func__);
+ 
+     if(d->default_sink){
+         if(d->default_sink->priority >= d->sink->priority){
+             if(!(strcmp(d->default_sink->name, "bt_sco_sink") == 0 && strstr(d->sink->name, "bluez") != NULL)){
+                 pa_log_debug("default sink priority is higher, no need to change");
++                pa_core_set_configured_default_sink(d->core, d->default_sink->name);
++                pa_subscription_post(d->core, PA_SUBSCRIPTION_EVENT_SERVER | PA_SUBSCRIPTION_EVENT_CHANGE, PA_INVALID_INDEX);
++                pa_hook_fire(&(d->core)->hooks[PA_CORE_HOOK_DEFAULT_SINK_CHANGED], d->core->default_sink);
+                 d->ret = 0;
+             }
+         }
+Index: pulseaudio/src/modules/module-switch-on-connect.c
+===================================================================
+--- pulseaudio.orig/src/modules/module-switch-on-connect.c	2022-09-23 14:12:32.306776636 +0800
++++ pulseaudio/src/modules/module-switch-on-connect.c	2022-09-23 14:12:32.306776636 +0800
+@@ -92,6 +92,7 @@
+ 
+     hook_call_state.default_sink = c->default_sink;
+     hook_call_state.sink = sink;
++    hook_call_state.core = c;
+     hook_call_state.ret = -1;
+     alsa_discovery = pa_shared_get(c, "pa_core_alsa_discovery");
+     pa_hook_fire(pa_alsa_discovery_hook(alsa_discovery, PA_CORE_HOOK_SINK_PUT_HOOK_CALLBACK), &hook_call_state);
+@@ -173,6 +174,7 @@
+ 
+     hook_call_state.default_source = c->default_source;
+     hook_call_state.source = source;
++    hook_call_state.core = c;
+     hook_call_state.ret = -1;
+     alsa_discovery = pa_shared_get(c, "pa_core_alsa_discovery");
+     pa_hook_fire(pa_alsa_discovery_hook(alsa_discovery, PA_CORE_HOOK_SOURCE_PUT_HOOK_CALLBACK), &hook_call_state);
+Index: pulseaudio/src/pulsecore/source.h
+===================================================================
+--- pulseaudio.orig/src/pulsecore/source.h	2022-09-23 14:12:32.306776636 +0800
++++ pulseaudio/src/pulsecore/source.h	2022-09-23 14:12:32.306776636 +0800
+@@ -339,12 +339,14 @@
+ typedef struct pa_core_sink_put_hook_callback_data{
+     pa_sink *default_sink;
+     pa_sink *sink;
++    pa_core *core;
+     int ret;
+ } pa_core_sink_put_hook_callback_data;
+ 
+ typedef struct pa_core_source_put_hook_callback_data{
+     pa_source *default_source;
+     pa_source *source;
++    pa_core *core;
+     int ret;
+ } pa_core_source_put_hook_callback_data;
+ 

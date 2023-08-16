@@ -1,0 +1,47 @@
+From: Tanu Kaskinen <tanuk@iki.fi>
+Date: Mon, 10 Jun 2019 14:18:47 +0300
+Subject: sink, source: Don't change suspend cause when unlinking
+
+See the added comments for why this is necessary.
+
+Fixes: https://gitlab.freedesktop.org/pulseaudio/pulseaudio/issues/667
+(cherry picked from commit 7fb85e0a5bfdec339fda9f7584f65cf9ddbd50a1)
+---
+ src/pulsecore/sink.c   | 6 +++++-
+ src/pulsecore/source.c | 6 +++++-
+ 2 files changed, 10 insertions(+), 2 deletions(-)
+
+diff --git a/src/pulsecore/sink.c b/src/pulsecore/sink.c
+index 38e8e50..4abbbb0 100644
+--- a/src/pulsecore/sink.c
++++ b/src/pulsecore/sink.c
+@@ -760,7 +760,11 @@ void pa_sink_unlink(pa_sink* s) {
+     }
+ 
+     if (linked)
+-        sink_set_state(s, PA_SINK_UNLINKED, 0);
++        /* It's important to keep the suspend cause unchanged when unlinking,
++         * because if we remove the SESSION suspend cause here, the alsa sink
++         * will sync its volume with the hardware while another user is
++         * active, messing up the volume for that other user. */
++        sink_set_state(s, PA_SINK_UNLINKED, s->suspend_cause);
+     else
+         s->state = PA_SINK_UNLINKED;
+ 
+diff --git a/src/pulsecore/source.c b/src/pulsecore/source.c
+index 02ae87a..c11d89b 100644
+--- a/src/pulsecore/source.c
++++ b/src/pulsecore/source.c
+@@ -702,7 +702,11 @@ void pa_source_unlink(pa_source *s) {
+     }
+ 
+     if (linked)
+-        source_set_state(s, PA_SOURCE_UNLINKED, 0);
++        /* It's important to keep the suspend cause unchanged when unlinking,
++         * because if we remove the SESSION suspend cause here, the alsa
++         * source will sync its volume with the hardware while another user is
++         * active, messing up the volume for that other user. */
++        source_set_state(s, PA_SOURCE_UNLINKED, s->suspend_cause);
+     else
+         s->state = PA_SOURCE_UNLINKED;
+ 

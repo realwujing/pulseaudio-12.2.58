@@ -1,0 +1,242 @@
+diff --git a/src/daemon/daemon-conf.c b/src/daemon/daemon-conf.c
+index 9883126..5fbe833 100644
+--- a/src/daemon/daemon-conf.c
++++ b/src/daemon/daemon-conf.c
+@@ -28,6 +28,7 @@
+ #include <unistd.h>
+ #include <fcntl.h>
+ #include <sys/stat.h>
++#include <dlfcn.h>
+ 
+ #ifdef HAVE_SCHED_H
+ #include <sched.h>
+@@ -54,10 +55,26 @@
+ #define DEFAULT_CONFIG_FILE PA_DEFAULT_CONFIG_DIR PA_PATH_SEP "daemon.conf"
+ #define DEFAULT_CONFIG_FILE_USER PA_PATH_SEP "daemon.conf"
+ 
++/* added for huawei custom */
++#define PLATFORM_CONF_PATH "/usr/share/vendor"
++#define PLATFORM_CONF_FILE "pulseaudio.conf"
++#define PLATFORM_LOAD_LIBRARY "libalsa-util.so"
++
+ #define ENV_SCRIPT_FILE "PULSE_SCRIPT"
+ #define ENV_CONFIG_FILE "PULSE_CONFIG"
+ #define ENV_DL_SEARCH_PATH "PULSE_DLPATH"
+ 
++struct vendor_card_part {
++    const int id;
++    const char *vendor;
++    const char *card;
++};
++
++const struct vendor_card_part id_table[] = {
++    {0x1, "huawei", "hisi-hdmi"},
++    {-1, "unkonwn", "unkonwn"},
++};
++
+ static const pa_daemon_conf default_conf = {
+     .cmd = PA_CMD_DAEMON,
+     .daemonize = false,
+@@ -507,6 +524,86 @@ static int parse_server_type(pa_config_parser_state *state) {
+ }
+ #endif
+ 
++int pa_get_card_name(char *path, char *card)
++{
++    char *load_path;
++    void *handle;
++    int (*get_card_index)(int);
++    int (*get_card_name)(int, char*);
++    char card_name[SND_CARD_NAME_LEN];
++    int j, index = -1, ret = 0;
++
++    load_path = pa_sprintf_malloc("%s" PA_PATH_SEP "%s", path, PLATFORM_LOAD_LIBRARY);
++    handle = dlopen(load_path, RTLD_NOW);
++    if (handle == NULL) {
++        pa_log(_("Failed to open library %s: %s"), load_path, dlerror());
++        ret = -1;
++        goto finish;
++    }
++
++    get_card_index = dlsym(handle, "pa_alsa_get_card_index");
++    get_card_name = dlsym(handle, "pa_alsa_get_card_name");
++    if ((get_card_index == NULL) || (get_card_name == NULL)) {
++        pa_log(_("Failed to get function %s"), dlerror());
++        dlclose(handle);
++        ret = -1;
++        goto finish;
++    }
++
++    while (1) {
++        index = get_card_index(index);
++        if (index >= 0) {
++            get_card_name(index, card_name);
++            for (j = 0; id_table[j].id != -1; j++) {
++                if (strcmp(id_table[j].card, card_name) == 0) {
++                    strncpy(card, card_name, SND_CARD_NAME_LEN);
++                    break;
++                }
++            }
++        } else {
++            /* no sound card to get */
++            break;
++        }
++    }
++
++    dlclose(handle);
++
++finish:
++    pa_xfree(load_path);
++    return ret;
++}
++
++int pa_get_vendor_name(char *card, char *vendor)
++{
++    int j;
++
++    for(j = 0; id_table[j].id != -1; j++) {
++        if (strcmp(id_table[j].card, card) == 0) {
++            strncpy(vendor, id_table[j].vendor, SND_CARD_NAME_LEN);
++            break;
++        }
++    }
++
++    return 0;
++}
++
++int pa_platform_load(pa_daemon_conf *conf, char *vendor, char *card)
++{
++    char *filename;
++
++    if (!vendor[0] || !card[0]) {
++        return 0;
++    }
++
++    /* load custom daemon file */
++    filename = pa_sprintf_malloc("%s" PA_PATH_SEP "%s" PA_PATH_SEP "%s" PA_PATH_SEP "%s", PLATFORM_CONF_PATH, vendor, card, PLATFORM_CONF_FILE);
++    pa_log_notice("loading custom daemon file: %s", filename);
++    pa_daemon_conf_load(conf, filename);
++    pa_xfree(filename);
++
++    return 0;
++}
++
+ int pa_daemon_conf_load(pa_daemon_conf *c, const char *filename) {
+     int r = -1;
+     FILE *f = NULL;
+diff --git a/src/daemon/daemon-conf.h b/src/daemon/daemon-conf.h
+index 953ea33..c859779 100644
+--- a/src/daemon/daemon-conf.h
++++ b/src/daemon/daemon-conf.h
+@@ -33,6 +33,9 @@
+ #include <sys/resource.h>
+ #endif
+ 
++/* keep the same size with alsa-lib */
++#define SND_CARD_NAME_LEN 32
++
+ /* The actual command to execute */
+ typedef enum pa_daemon_conf_cmd {
+     PA_CMD_DAEMON,  /* the default */
+@@ -164,4 +167,7 @@ int pa_daemon_conf_set_local_server_type(pa_daemon_conf *c, const char *string);
+ const char *pa_daemon_conf_get_default_script_file(pa_daemon_conf *c);
+ FILE *pa_daemon_conf_open_default_script_file(pa_daemon_conf *c);
+ 
++int pa_get_card_name(char *path, char *card);
++int pa_get_vendor_name(char *card, char *vendor);
++int pa_platform_load(pa_daemon_conf *conf, char *vendor, char *card);
+ #endif
+diff --git a/src/daemon/main.c b/src/daemon/main.c
+index c80fa94..eaade7a 100644
+--- a/src/daemon/main.c
++++ b/src/daemon/main.c
+@@ -380,6 +380,7 @@ int main(int argc, char *argv[]) {
+     bool ltdl_init = false;
+     int n_fds = 0, *passed_fds = NULL;
+     const char *e;
++    char vendor_name[SND_CARD_NAME_LEN], card_name[SND_CARD_NAME_LEN];
+ #ifdef HAVE_FORK
+     int daemon_pipe[2] = { -1, -1 };
+     int daemon_pipe2[2] = { -1, -1 };
+@@ -479,6 +480,14 @@ int main(int argc, char *argv[]) {
+     if (pa_daemon_conf_load(conf, NULL) < 0)
+         goto finish;
+ 
++    memset(card_name, 0, sizeof(card_name));
++    memset(vendor_name, 0, sizeof(vendor_name));
++    pa_get_card_name(conf->dl_search_path, card_name);
++    pa_get_vendor_name(card_name, vendor_name);
++
++    if (pa_platform_load(conf, vendor_name, card_name) < 0)
++        pa_log(_("Failed to load platform file."));
++
+     if (pa_daemon_conf_env(conf) < 0)
+         goto finish;
+ 
+diff --git a/src/modules/alsa/alsa-util.c b/src/modules/alsa/alsa-util.c
+index 41134ea..04e9700 100644
+--- a/src/modules/alsa/alsa-util.c
++++ b/src/modules/alsa/alsa-util.c
+@@ -1734,3 +1734,40 @@ int pa_alsa_get_hdmi_eld(snd_hctl_elem_t *elem, pa_hdmi_eld *eld) {
+ 
+     return 0;
+ }
++
++int pa_alsa_get_card_index(int card)
++{
++    if (snd_card_next(&card) < 0 || card < 0) {
++        pa_log_debug("no soundcards found...");
++        return -1;
++    }
++
++    return card;
++}
++
++int pa_alsa_get_card_name(int index, char *card_name)
++{
++    char name[SND_CARD_NAME_LEN];
++    snd_ctl_t *handle;
++    snd_ctl_card_info_t *info;
++    snd_ctl_card_info_alloca(&info);
++    int err;
++
++    sprintf(name, "hw:%d", index);
++    if ((err = snd_ctl_open(&handle, name, 0)) < 0) {
++        pa_log_debug("control open (%i): %s", index, snd_strerror(err));
++        return -1;
++    }
++
++    if ((err = snd_ctl_card_info(handle, info)) < 0) {
++        pa_log_debug("control hardware info (%i): %s", index, snd_strerror(err));
++        snd_ctl_close(handle);
++        return -1;
++    }
++
++    strncpy(card_name, snd_ctl_card_info_get_name(info), SND_CARD_NAME_LEN);
++
++    snd_ctl_close(handle);
++
++    return 0;
++}
+diff --git a/src/modules/alsa/alsa-util.h b/src/modules/alsa/alsa-util.h
+index 8345a0b..b7c03b8 100644
+--- a/src/modules/alsa/alsa-util.h
++++ b/src/modules/alsa/alsa-util.h
+@@ -33,6 +33,9 @@
+ 
+ #include "alsa-mixer.h"
+ 
++/* keep the same size with alsa-lib */
++#define SND_CARD_NAME_LEN 32
++
+ int pa_alsa_set_hw_params(
+         snd_pcm_t *pcm_handle,
+         pa_sample_spec *ss,                /* modified at return */
+@@ -151,4 +154,7 @@ struct pa_hdmi_eld {
+ 
+ int pa_alsa_get_hdmi_eld(snd_hctl_elem_t *elem, pa_hdmi_eld *eld);
+ 
++int pa_alsa_get_card_index(int card);
++int pa_alsa_get_card_name(int index, char *card_name);
++
+ #endif

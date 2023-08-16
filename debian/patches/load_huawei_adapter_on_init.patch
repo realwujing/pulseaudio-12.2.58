@@ -1,0 +1,219 @@
+Index: pulseaudio/src/pulsecore/core.h
+===================================================================
+--- pulseaudio.orig/src/pulsecore/core.h	2022-09-14 09:45:31.315119057 +0800
++++ pulseaudio/src/pulsecore/core.h	2022-09-14 09:45:31.311118901 +0800
+@@ -286,6 +286,7 @@
+     PA_CORE_HOOK_SINK_PUT_HOOK_CALLBACK,
+     PA_CORE_HOOK_SOURCE_PUT_HOOK_CALLBACK,
+     PA_CORE_NATIVE_COMMAND_SET_DEFAULT,
++    PA_CORE_BLUEZ_DEVICE_INIT,
+     PA_CORE_ALSA_HOOK_MAX
+ } pa_core_alsa_hook_t;
+ 
+Index: pulseaudio/src/modules/bluetooth/module-bluez5-discover.c
+===================================================================
+--- pulseaudio.orig/src/modules/bluetooth/module-bluez5-discover.c	2022-09-14 09:45:31.315119057 +0800
++++ pulseaudio/src/modules/bluetooth/module-bluez5-discover.c	2022-09-14 09:45:31.311118901 +0800
+@@ -76,12 +76,7 @@
+         pa_core_alsa_discovery *alsa_discovery;
+ 
+         alsa_discovery = pa_shared_get(u->core, "pa_core_alsa_discovery");
+-        if (alsa_discovery && alsa_discovery->vendor_name[0]) {
+-            char *module_name = pa_sprintf_malloc("module-%s-adapter", alsa_discovery->vendor_name);
+-            pa_log_debug("Loading %s",module_name);
+-            pa_module_load(&m, u->module->core, module_name, NULL);
+-            pa_xfree(module_name);
+-        }        
++        pa_hook_fire(pa_alsa_discovery_hook(alsa_discovery, PA_CORE_BLUEZ_DEVICE_INIT), NULL);
+ 
+         char *args = pa_sprintf_malloc("path=%s autodetect_mtu=%i", d->path, (int)u->autodetect_mtu);
+ 
+Index: pulseaudio/src/modules/module-huawei-adapter.c
+===================================================================
+--- pulseaudio.orig/src/modules/module-huawei-adapter.c	2022-09-14 09:45:31.315119057 +0800
++++ pulseaudio/src/modules/module-huawei-adapter.c	2022-09-14 09:45:31.311118901 +0800
+@@ -120,6 +120,7 @@
+     pa_hook_slot *device_module_sink_put_hook_callback_slot;
+     pa_hook_slot *device_module_source_put_hook_callback_slot;
+     pa_hook_slot *pa_core_native_set_default_command_slot;
++    pa_hook_slot *device_module_bluez_device_init_slot;
+     //pa_hook_slot *pa_core_default_sink_changed_slot;
+     //pa_hook_slot *pa_core_default_source_changed_slot;
+ };
+@@ -600,11 +601,45 @@
+ static pa_hook_result_t 
+ device_module_done_cb(pa_bluetooth_device_module_discovery *y, void *d, struct userdata *u)
+ {
+-    pa_assert(u);    
++    pa_assert(u);
++
++    pa_log_debug("enter hook %s",__func__);
++    //pa_module_unload(u->module, true);
++    if (u->device_module_init_profile_slot){
++        pa_hook_slot_free(u->device_module_init_profile_slot);
++        u->device_module_init_profile_slot = NULL;
++    }
++
++    if (u->device_module_add_sink_slot){
++        pa_hook_slot_free(u->device_module_add_sink_slot);
++        u->device_module_add_sink_slot = NULL;
++    }
++
++    if (u->device_module_add_source_slot){
++        pa_hook_slot_free(u->device_module_add_source_slot);
++        u->device_module_add_source_slot = NULL;
++    }
+ 
+-    pa_log_debug("Unloading huawei_adapter module");
+-    pa_module_unload(u->module, true);
++    if (u->device_module_sink_state_change_slot){
++        pa_hook_slot_free(u->device_module_sink_state_change_slot);
++        u->device_module_sink_state_change_slot = NULL;
++    }
++
++    if (u->device_module_source_state_change_slot){
++        pa_hook_slot_free(u->device_module_source_state_change_slot);
++        u->device_module_source_state_change_slot = NULL;
++    }
+ 
++    if (u->device_module_stop_thread_slot){
++        pa_hook_slot_free(u->device_module_stop_thread_slot);
++        u->device_module_stop_thread_slot = NULL;
++    }
++
++    if (u->device_module_done_slot){
++        pa_hook_slot_free(u->device_module_done_slot);
++        u->device_module_done_slot = NULL;
++    }
++    u->device_module_discovery = NULL;
+     return PA_HOOK_OK;
+ }
+ 
+@@ -731,6 +766,46 @@
+ }
+ 
+ static pa_hook_result_t
++pa_core_bluez_device_init_cb(pa_core *y, void *d, struct userdata *u)
++{
++    pa_assert(y);
++    pa_assert(u);
++    pa_log_debug("enter hook %s", __func__);
++
++    if (u->device_module_discovery)
++        return PA_HOOK_OK;
++    if ((u->device_module_discovery = pa_shared_get(u->core, "bluetooth_device_module_discovery")))
++        pa_bluetooth_device_module_discovery_ref(u->device_module_discovery);
++    else {
++        pa_log_error("module-bluez5-discover doesn't seem to be loaded 2, refusing to load module-huawei-adapter");
++        return PA_HOOK_OK;
++    }
++
++    u->device_module_init_profile_slot =
++         pa_hook_connect(pa_bluetooth_module_device_discovery_hook(u->device_module_discovery, PA_BLUETOOTH_DEVICE_MODULE_HOOK_INIT_PROFILE),
++                        PA_HOOK_NORMAL, (pa_hook_cb_t) device_module_init_profile_cb, u);
++    u->device_module_add_sink_slot =
++        pa_hook_connect(pa_bluetooth_module_device_discovery_hook(u->device_module_discovery, PA_BLUETOOTH_DEVICE_MODULE_HOOK_ADD_SINK),
++                        PA_HOOK_NORMAL, (pa_hook_cb_t) device_module_add_sink_cb, u);
++    u->device_module_add_source_slot =
++        pa_hook_connect(pa_bluetooth_module_device_discovery_hook(u->device_module_discovery, PA_BLUETOOTH_DEVICE_MODULE_HOOK_ADD_SOURCE),
++                        PA_HOOK_NORMAL, (pa_hook_cb_t) device_module_add_source_cb, u);
++    u->device_module_sink_state_change_slot =
++        pa_hook_connect(pa_bluetooth_module_device_discovery_hook(u->device_module_discovery, PA_BLUETOOTH_DEVICE_MODULE_HOOK_SINK_STATE_CHANGED),
++                        PA_HOOK_NORMAL, (pa_hook_cb_t) device_module_sink_state_change_cb, u);
++    u->device_module_source_state_change_slot =
++        pa_hook_connect(pa_bluetooth_module_device_discovery_hook(u->device_module_discovery, PA_BLUETOOTH_DEVICE_MODULE_HOOK_SOURCE_STATE_CHANGED),
++                        PA_HOOK_NORMAL, (pa_hook_cb_t) device_module_source_state_change_cb, u);
++    u->device_module_stop_thread_slot =
++        pa_hook_connect(pa_bluetooth_module_device_discovery_hook(u->device_module_discovery, PA_BLUETOOTH_DEVICE_MODULE_HOOK_STOP_THREAD),
++                        PA_HOOK_NORMAL, (pa_hook_cb_t) device_module_stop_thread_cb, u);
++    u->device_module_done_slot =
++        pa_hook_connect(pa_bluetooth_module_device_discovery_hook(u->device_module_discovery, PA_BLUETOOTH_DEVICE_MODULE_DONE),
++                        PA_HOOK_NORMAL, (pa_hook_cb_t) device_module_done_cb, u);
++    return PA_HOOK_OK;
++}
++
++static pa_hook_result_t
+ pa_core_source_put_hook_callback_cb(pa_core *y, pa_core_source_put_hook_callback_data *d, struct userdata *u)
+ {
+     pa_assert(d);
+@@ -816,36 +891,7 @@
+     u->module = m;
+     u->core = m->core;
+ 
+-    if ((u->device_module_discovery = pa_shared_get(u->core, "bluetooth_device_module_discovery")))
+-        pa_bluetooth_device_module_discovery_ref(u->device_module_discovery);
+-    else {
+-        pa_log_error("module-bluez5-discover doesn't seem to be loaded 2, refusing to load module-huawei-adapter");
+-        goto fail_free_modargs;
+-    }
+-    
+     u->alsa_discovery = pa_shared_get(u->core, "pa_core_alsa_discovery");
+-    
+-    u->device_module_init_profile_slot = 
+-         pa_hook_connect(pa_bluetooth_module_device_discovery_hook(u->device_module_discovery, PA_BLUETOOTH_DEVICE_MODULE_HOOK_INIT_PROFILE),
+-                        PA_HOOK_NORMAL, (pa_hook_cb_t) device_module_init_profile_cb, u);
+-    u->device_module_add_sink_slot =
+-        pa_hook_connect(pa_bluetooth_module_device_discovery_hook(u->device_module_discovery, PA_BLUETOOTH_DEVICE_MODULE_HOOK_ADD_SINK),
+-                        PA_HOOK_NORMAL, (pa_hook_cb_t) device_module_add_sink_cb, u);
+-    u->device_module_add_source_slot =
+-        pa_hook_connect(pa_bluetooth_module_device_discovery_hook(u->device_module_discovery, PA_BLUETOOTH_DEVICE_MODULE_HOOK_ADD_SOURCE),
+-                        PA_HOOK_NORMAL, (pa_hook_cb_t) device_module_add_source_cb, u);
+-    u->device_module_sink_state_change_slot =
+-        pa_hook_connect(pa_bluetooth_module_device_discovery_hook(u->device_module_discovery, PA_BLUETOOTH_DEVICE_MODULE_HOOK_SINK_STATE_CHANGED),
+-                        PA_HOOK_NORMAL, (pa_hook_cb_t) device_module_sink_state_change_cb, u);
+-    u->device_module_source_state_change_slot =
+-        pa_hook_connect(pa_bluetooth_module_device_discovery_hook(u->device_module_discovery, PA_BLUETOOTH_DEVICE_MODULE_HOOK_SOURCE_STATE_CHANGED),
+-                        PA_HOOK_NORMAL, (pa_hook_cb_t) device_module_source_state_change_cb, u);
+-    u->device_module_stop_thread_slot =
+-        pa_hook_connect(pa_bluetooth_module_device_discovery_hook(u->device_module_discovery, PA_BLUETOOTH_DEVICE_MODULE_HOOK_STOP_THREAD),
+-                        PA_HOOK_NORMAL, (pa_hook_cb_t) device_module_stop_thread_cb, u);
+-    u->device_module_done_slot =
+-        pa_hook_connect(pa_bluetooth_module_device_discovery_hook(u->device_module_discovery, PA_BLUETOOTH_DEVICE_MODULE_DONE),
+-                        PA_HOOK_NORMAL, (pa_hook_cb_t) device_module_done_cb, u);
+ 
+     u->device_module_alsa_sink_begin_new_slot =
+         pa_hook_connect(pa_alsa_discovery_hook(u->alsa_discovery, PA_CORE_ALSA_HOOK_ALSA_SINK_BEGIN_NEW),
+@@ -870,7 +916,10 @@
+                         PA_HOOK_NORMAL, (pa_hook_cb_t) pa_core_source_put_hook_callback_cb, u);
+     u->pa_core_native_set_default_command_slot =
+         pa_hook_connect(pa_alsa_discovery_hook(u->alsa_discovery, PA_CORE_NATIVE_COMMAND_SET_DEFAULT),
+-                        PA_HOOK_NORMAL, (pa_hook_cb_t) pa_core_command_set_default_cb, u);                      
++                        PA_HOOK_NORMAL, (pa_hook_cb_t) pa_core_command_set_default_cb, u);
++    u->device_module_bluez_device_init_slot =
++        pa_hook_connect(pa_alsa_discovery_hook(u->alsa_discovery, PA_CORE_BLUEZ_DEVICE_INIT),
++                        PA_HOOK_NORMAL, (pa_hook_cb_t) pa_core_bluez_device_init_cb, u);
+     
+     pa_log("module-huawei-adapter load ok!!!");
+ 
+@@ -944,5 +993,8 @@
+     if (u->device_module_source_put_hook_callback_slot)
+         pa_hook_slot_free(u->device_module_source_put_hook_callback_slot);
+ 
++    if (u->device_module_bluez_device_init_slot)
++        pa_hook_slot_free(u->device_module_bluez_device_init_slot);
++
+     pa_xfree(u);
+ }
+Index: pulseaudio/src/daemon/main.c
+===================================================================
+--- pulseaudio.orig/src/daemon/main.c	2022-09-14 09:45:31.315119057 +0800
++++ pulseaudio/src/daemon/main.c	2022-09-14 09:45:31.311118901 +0800
+@@ -1062,6 +1062,18 @@
+     alsa_discovery = pa_alsa_discovery_get(c);
+     strcpy(alsa_discovery->vendor_name,vendor_name);
+ 
++    if (alsa_discovery && alsa_discovery->vendor_name[0]) {
++        pa_module *m;
++        char *module_name = pa_sprintf_malloc("module-%s-adapter", alsa_discovery->vendor_name);
++        pa_log_debug("Loading %s", module_name);
++        pa_module_load(&m, c, module_name, NULL);
++        pa_xfree(module_name);
++
++        if(!m){
++            pa_log_debug("Load %s failed.", module_name);
++        }
++    }
++
+     pa_cpu_init(&c->cpu_info);
+ 
+     pa_assert_se(pa_signal_init(pa_mainloop_get_api(mainloop)) == 0);

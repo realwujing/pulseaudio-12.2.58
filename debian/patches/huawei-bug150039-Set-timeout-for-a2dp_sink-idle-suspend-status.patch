@@ -1,0 +1,28 @@
+From c08aff131f8870be7282e187f5055e254ad215d8 Mon Sep 17 00:00:00 2001
+From: "xinpeng.wang" <wangxinpeng@uniontech.com>
+Date: Fri, 23 Sep 2022 17:03:11 +0800
+Subject: [PATCH] conf: Set 'timeout=2' for a2dp_sink idle/suspend status
+
+If a2dp_sink has been paused, it should quickly enter
+idle/suspend status, and then Bluetooth chip can enter
+normal status for handling new operation commands.
+---
+ src/daemon/default.pa.in | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/daemon/default.pa.in b/src/daemon/default.pa.in
+index 14b6a6f..6c0704f 100755
+--- a/src/daemon/default.pa.in
++++ b/src/daemon/default.pa.in
+@@ -149,7 +149,7 @@ load-module module-always-sink
+ load-module module-intended-roles
+ 
+ ### Automatically suspend sinks/sources that become idle for too long
+-load-module module-suspend-on-idle
++load-module module-suspend-on-idle timeout=2
+ 
+ ### If autoexit on idle is enabled we want to make sure we only quit
+ ### when no local session needs us anymore.
+-- 
+2.20.1
+

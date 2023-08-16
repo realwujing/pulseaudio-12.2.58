@@ -1,0 +1,113 @@
+diff --git a/src/modules/alsa/module-alsa-card.c b/src/modules/alsa/module-alsa-card.c
+index 5a07416..69abb16 100644
+--- a/src/modules/alsa/module-alsa-card.c
++++ b/src/modules/alsa/module-alsa-card.c
+@@ -366,6 +366,7 @@ static int report_jack_state(snd_mixer_elem_t *melem, unsigned int mask) {
+     pa_alsa_jack *jack;
+     struct temp_port_avail *tp, *tports;
+     pa_card_profile *profile;
++    pa_available_t active_available = PA_AVAILABLE_UNKNOWN;
+ 
+     pa_assert(u);
+ 
+@@ -446,6 +447,8 @@ static int report_jack_state(snd_mixer_elem_t *melem, unsigned int mask) {
+      * only set obviously unavailable profiles (those that contain only
+      * unavailable ports) to PA_AVAILABLE_NO and all others to
+      * PA_AVAILABLE_UNKNOWN. */
++    if (u->card->active_profile)
++        active_available = u->card->active_profile->available;
+     PA_HASHMAP_FOREACH(profile, u->card->profiles, state) {
+         pa_device_port *port;
+         void *state2;
+@@ -465,9 +468,18 @@ static int report_jack_state(snd_mixer_elem_t *melem, unsigned int mask) {
+             }
+         }
+ 
+-        pa_card_profile_set_available(profile, available);
++        /* We want to update the active profile's status last, so logic that
++         * may change the active profile based on profile availability status
++         * has an updated view of all profiles' availabilities. */
++        if (profile == u->card->active_profile)
++            active_available = available;
++        else
++            pa_card_profile_set_available(profile, available);
+     }
+ 
++    if (u->card->active_profile)
++        pa_card_profile_set_available(u->card->active_profile, active_available);
++
+     pa_xfree(tports);
+     return 0;
+ }
+diff --git a/src/modules/module-switch-on-port-available.c b/src/modules/module-switch-on-port-available.c
+index 25b0db9..3cfc496 100644
+--- a/src/modules/module-switch-on-port-available.c
++++ b/src/modules/module-switch-on-port-available.c
+@@ -370,6 +370,10 @@ static void switch_from_port(pa_device_port *port) {
+ 
+     pa_log_debug("Trying to switch away from port %s, found %s", port->name, best_port ? best_port->name : "no better option");
+ 
++    /* If there is no available port to switch to we need check if the active
++     * profile is still available in the
++     * PA_CORE_HOOK_CARD_PROFILE_AVAILABLE_CHANGED callback, as at this point
++     * the profile availability hasn't been updated yet. */
+     if (best_port)
+         switch_to_port(best_port);
+ }
+@@ -419,6 +423,47 @@ static pa_hook_result_t port_available_hook_callback(pa_core *c, pa_device_port
+     return PA_HOOK_OK;
+ }
+ 
++static pa_card_profile *find_best_profile(pa_card *card) {
++    pa_card_profile *profile, *best_profile;
++    void *state;
++
++    pa_assert(card);
++    best_profile = pa_hashmap_get(card->profiles, "off");
++
++    PA_HASHMAP_FOREACH(profile, card->profiles, state) {
++        pa_log_debug("[profile_name %s] [aval %d] [prio %d] [card_name %s]", profile->name, profile->available, profile->priority, card->name);
++        if (profile->available == PA_AVAILABLE_NO)
++            continue;
++
++        if (profile->priority > best_profile->priority)
++            best_profile = profile;
++    }
++
++    return best_profile;
++}
++
++static pa_hook_result_t card_profile_available_hook_callback(pa_core *c, pa_card_profile *profile, struct userdata *u) {
++    pa_card *card;
++
++    pa_assert(profile);
++    pa_assert_se(card = profile->card);
++
++    if (profile->available != PA_AVAILABLE_NO)
++        return PA_HOOK_OK;
++
++    if (!card->active_profile)
++        return PA_HOOK_OK;
++
++    if (!pa_streq(profile->name, card->active_profile->name))
++        return PA_HOOK_OK;
++
++    pa_log_debug("Active profile %s on card %s became unavailable, switching to another profile", profile->name, card->name);
++    pa_card_set_profile(card, find_best_profile(card), false);
++
++    return PA_HOOK_OK;
++
++}
++
+ static void handle_all_unavailable(pa_core *core) {
+     pa_card *card;
+     uint32_t state;
+@@ -633,6 +678,8 @@ int pa__init(pa_module*m) {
+                            PA_HOOK_NORMAL, (pa_hook_cb_t) source_new_hook_callback, NULL);
+     pa_module_hook_connect(m, &m->core->hooks[PA_CORE_HOOK_PORT_AVAILABLE_CHANGED],
+                            PA_HOOK_LATE, (pa_hook_cb_t) port_available_hook_callback, u);
++    pa_module_hook_connect(m, &m->core->hooks[PA_CORE_HOOK_CARD_PROFILE_AVAILABLE_CHANGED],
++                           PA_HOOK_LATE, (pa_hook_cb_t) card_profile_available_hook_callback, NULL);
+     pa_module_hook_connect(m, &m->core->hooks[PA_CORE_HOOK_CARD_PUT],
+                            PA_HOOK_NORMAL, (pa_hook_cb_t) card_put_hook_callback, u);
+     pa_module_hook_connect(m, &m->core->hooks[PA_CORE_HOOK_CARD_UNLINK],

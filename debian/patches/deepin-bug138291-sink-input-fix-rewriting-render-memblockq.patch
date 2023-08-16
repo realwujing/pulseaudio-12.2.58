@@ -1,0 +1,33 @@
+From 4c6bab435316768974b94573e3f67ea17f56e221 Mon Sep 17 00:00:00 2001
+From: Georg Chini <georg@chini.tk>
+Date: Wed, 3 Jul 2019 12:32:50 +0200
+Subject: [PATCH] sink-input: fix rewriting render memblockq when nothing
+ should be rewound
+
+If process_rewind() is called with nbytes = 0, process_rewind() will
+nevertheless request a rewrite of the render memblockq.
+
+This patch fixes the problem by adding the render memblockq length to the
+rewrite amount only if nbytes > 0.
+---
+ src/pulsecore/sink-input.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/src/pulsecore/sink-input.c b/src/pulsecore/sink-input.c
+index 45e005e4a..d3ead2cb5 100644
+--- a/src/pulsecore/sink-input.c
++++ b/src/pulsecore/sink-input.c
+@@ -1094,7 +1094,9 @@ void pa_sink_input_process_rewind(pa_sink_input *i, size_t nbytes /* in sink sam
+         size_t max_rewrite, amount;
+ 
+         /* Calculate how much make sense to rewrite at most */
+-        max_rewrite = nbytes + lbq;
++        max_rewrite = nbytes;
++        if (nbytes > 0)
++            max_rewrite += lbq;
+ 
+         /* Transform into local domain */
+         if (i->thread_info.resampler)
+-- 
+2.20.1
+

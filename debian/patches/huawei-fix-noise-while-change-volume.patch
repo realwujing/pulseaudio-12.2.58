@@ -1,0 +1,14 @@
+diff --git a/src/pulsecore/sink-input.c b/src/pulsecore/sink-input.c
+index bc42a9b..2765018 100644
+--- a/src/pulsecore/sink-input.c
++++ b/src/pulsecore/sink-input.c
+@@ -2065,7 +2065,8 @@ int pa_sink_input_process_msg(pa_msgobject *o, int code, void *userdata, int64_t
+         case PA_SINK_INPUT_MESSAGE_SET_SOFT_VOLUME:
+             if (!pa_cvolume_equal(&i->thread_info.soft_volume, &i->soft_volume)) {
+                 i->thread_info.soft_volume = i->soft_volume;
+-                pa_sink_input_request_rewind(i, 0, true, false, false);
++		/* cancel the rewind of change volume */
++                // pa_sink_input_request_rewind(i, 0, true, false, false);
+             }
+             return 0;
+ 

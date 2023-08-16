@@ -1,0 +1,37 @@
+From 1ad9566a3fc42953a755b2291cf302db5ab92a39 Mon Sep 17 00:00:00 2001
+From: Chengyi Zhao <zhaochengyi@uniontech.com>
+Date: Fri, 15 Oct 2021 13:36:40 +0800
+Subject: [PATCH] alsa-mixer: Fix Dahua's profile for full support
+
+Fix the front mic and rear mic in Dahua's profile
+dahua-4f05-usb-audio.conf for full spport.
+---
+ .../alsa/mixer/profile-sets/dahua-4f05-usb-audio.conf | 11 +++++++++--
+ 1 file changed, 9 insertions(+), 2 deletions(-)
+
+diff --git a/src/modules/alsa/mixer/profile-sets/dahua-4f05-usb-audio.conf b/src/modules/alsa/mixer/profile-sets/dahua-4f05-usb-audio.conf
+index 9aded93..48a4e95 100644
+--- a/src/modules/alsa/mixer/profile-sets/dahua-4f05-usb-audio.conf
++++ b/src/modules/alsa/mixer/profile-sets/dahua-4f05-usb-audio.conf
+@@ -16,9 +16,16 @@
+ [General]
+ auto-profiles = yes
+ 
+-[Mapping analog-stereo-mic]
++[Mapping analog-stereo-rear-mic]
+ description = Micphone
+-paths-input = analog-input analog-input-mic
++paths-input = analog-input analog-input-rear-mic
++device-strings = hw:%f,0
++channel-map = left,right
++direction = input
++
++[Mapping analog-stereo-front-mic]
++description = Micphone
++paths-input = analog-input analog-input-front-mic
+ device-strings = hw:%f,2
+ channel-map = left,right
+ direction = input
+-- 
+2.20.1
+

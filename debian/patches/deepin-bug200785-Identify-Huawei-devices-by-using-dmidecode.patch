@@ -1,0 +1,121 @@
+From 899e83e31b08c6c71150e3b4847add72d72483ed Mon Sep 17 00:00:00 2001
+From: zhaochengyi <zhaochengyi@uniontech.com>
+Date: Wed, 24 May 2023 18:13:52 +0800
+Subject: [PATCH] daemon-conf: Identify Huawei devices by using dmidecode in
+ uos-hw-config
+
+If we need to use dmidecode to get the board information,
+the board ID is the key index.
+PanguV: PGK90(A Version Machine),PGKA0(B,C,D Version Machine),
+KVK90: KelvinU,
+KVK90A: KelvinUA,
+KVKA0: KelvinV,
+PWC30: PanguW
+---
+ .../pulseaudio.conf                           |  0
+ .../pulseaudio.conf                           |  0
+ .../{PGUV-WBY0 => KelvinV}/pulseaudio.conf    |  0
+ .../{PGUW-WBX0 => PanguV}/pulseaudio.conf     |  0
+ .../custom/huawei/PanguW/pulseaudio.conf      |  9 +++++++
+ src/daemon/daemon-conf.c                      | 24 +++++++++++++------
+ src/daemon/main.c                             |  2 +-
+ 7 files changed, 27 insertions(+), 8 deletions(-)
+ rename src/daemon/custom/huawei/{KelvinU-WDU0A => KelvinU}/pulseaudio.conf (100%)
+ rename src/daemon/custom/huawei/{KelvinV-W5821 => KelvinUA}/pulseaudio.conf (100%)
+ rename src/daemon/custom/huawei/{PGUV-WBY0 => KelvinV}/pulseaudio.conf (100%)
+ rename src/daemon/custom/huawei/{PGUW-WBX0 => PanguV}/pulseaudio.conf (100%)
+ create mode 100644 src/daemon/custom/huawei/PanguW/pulseaudio.conf
+
+diff --git a/src/daemon/custom/huawei/KelvinU-WDU0A/pulseaudio.conf b/src/daemon/custom/huawei/KelvinU/pulseaudio.conf
+similarity index 100%
+rename from src/daemon/custom/huawei/KelvinU-WDU0A/pulseaudio.conf
+rename to src/daemon/custom/huawei/KelvinU/pulseaudio.conf
+diff --git a/src/daemon/custom/huawei/KelvinV-W5821/pulseaudio.conf b/src/daemon/custom/huawei/KelvinUA/pulseaudio.conf
+similarity index 100%
+rename from src/daemon/custom/huawei/KelvinV-W5821/pulseaudio.conf
+rename to src/daemon/custom/huawei/KelvinUA/pulseaudio.conf
+diff --git a/src/daemon/custom/huawei/PGUV-WBY0/pulseaudio.conf b/src/daemon/custom/huawei/KelvinV/pulseaudio.conf
+similarity index 100%
+rename from src/daemon/custom/huawei/PGUV-WBY0/pulseaudio.conf
+rename to src/daemon/custom/huawei/KelvinV/pulseaudio.conf
+diff --git a/src/daemon/custom/huawei/PGUW-WBX0/pulseaudio.conf b/src/daemon/custom/huawei/PanguV/pulseaudio.conf
+similarity index 100%
+rename from src/daemon/custom/huawei/PGUW-WBX0/pulseaudio.conf
+rename to src/daemon/custom/huawei/PanguV/pulseaudio.conf
+diff --git a/src/daemon/custom/huawei/PanguW/pulseaudio.conf b/src/daemon/custom/huawei/PanguW/pulseaudio.conf
+new file mode 100644
+index 0000000..0ed7727
+--- /dev/null
++++ b/src/daemon/custom/huawei/PanguW/pulseaudio.conf
+@@ -0,0 +1,9 @@
++# Add an incremental coverage profile for Huawei platforms.
++
++default-sample-format = s16le
++default-sample-rate = 48000
++default-sample-channels = 2
++default-channel-map = front-left,front-right
++
++default-fragments = 2
++default-fragment-size-msec = 20
+diff --git a/src/daemon/daemon-conf.c b/src/daemon/daemon-conf.c
+index f5cafa0..6708fd2 100644
+--- a/src/daemon/daemon-conf.c
++++ b/src/daemon/daemon-conf.c
+@@ -67,15 +67,25 @@
+ struct vendor_card_part {
+     const int id;
+     const char *vendor;
++    const char *board;
+     const char *card;
+ };
+ 
++/* If we need to use dmidecode to get the board information,
++ * the board ID is the key index.
++ * PanguV: PGK90(A Version Machine),PGKA0(B,C,D Version Machine),
++ * KVK90: KelvinU,
++ * KVK90A: KelvinUA,
++ * KVKA0: KelvinV,
++ * PWC30: PanguW */
+ const struct vendor_card_part id_table[] = {
+-    {0x1, "huawei", "KelvinV-W5821"},
+-    {0x2, "huawei", "KelvinU-WDU0A"},
+-    {0x3, "huawei", "PGUW-WBX0"},
+-    {0x4, "huawei", "PGUV-WBY0"},
+-    {-1, "unkonwn", "unkonwn"},
++    {0x0, "huawei", "PGK90", "PanguV"},
++    {0x1, "huawei", "PGKA0", "PanguV"},
++    {0x2, "huawei", "KVK90", "KelvinU"},
++    {0x3, "huawei", "KVK90A", "KelvinUA"},
++    {0x4, "huawei", "KVKA0", "KelvinV"},
++    {0x5, "huawei", "PWC30", "PanguW"},
++    {-1, "unknown", "unknown", "unknown"},
+ };
+ 
+ static const pa_daemon_conf default_conf = {
+@@ -540,8 +550,8 @@ bool pa_get_hw_info(const char *path, char *card) {
+             pa_log_debug("hw info r: %s", r);
+ 
+             for (i = 0; id_table[i].id != -1; i++) {
+-                if (strcmp(id_table[i].card, r) == 0) {
+-                    strncpy(card, r, SND_CARD_NAME_LEN);
++                if (strcmp(id_table[i].board, r) == 0) {
++                    strncpy(card, id_table[i].card, sizeof(card));
+                     matched = true;
+                     break;
+                 }
+diff --git a/src/daemon/main.c b/src/daemon/main.c
+index c081102..278654c 100644
+--- a/src/daemon/main.c
++++ b/src/daemon/main.c
+@@ -381,7 +381,7 @@ int main(int argc, char *argv[]) {
+     bool huawei_identification = false;
+     int n_fds = 0, *passed_fds = NULL;
+     const char *e;
+-    const char *hw_info_path = "/etc/hw_version";
++    const char *hw_info_path = "/usr/share/uos-hw-config/hw_dmi_version";
+     char vendor_name[SND_CARD_NAME_LEN], card_name[SND_CARD_NAME_LEN];
+ #ifdef HAVE_FORK
+     int daemon_pipe[2] = { -1, -1 };
+-- 
+2.20.1
+
