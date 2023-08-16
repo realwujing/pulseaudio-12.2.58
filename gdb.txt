@@ -1,0 +1,288 @@
+Traceback (most recent call last):
+  File "<string>", line 3, in <module>
+ModuleNotFoundError: No module named 'qt5printers'
+/home/uos/.gdbinit:64: Error in sourced command file:
+Error while executing Python code.
+Reading symbols from /usr/bin/pulseaudio...Reading symbols from /usr/lib/debug/.build-id/39/799b1bdd4c217c170abcc1f0e8a1e419c29575.debug...done.
+done.
+No source file named src/modules/alsa/alsa-mixer.c.
+Breakpoint 1 (src/modules/alsa/alsa-mixer.c:4905) pending.
+Starting program: /usr/bin/pulseaudio --log-level=4 --log-meta=1 --log-time=1
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/aarch64-linux-gnu/libthread_db.so.1".
+
+Breakpoint 1, pa_alsa_profile_set_probe (ps=0xaaaaaab28100, dev_id=0xaaaaaab12450 "0", ss=0xaaaaaaae2fec, default_n_fragments=4, 
+    default_fragment_size_msec=25) at modules/alsa/alsa-mixer.c:4905
+warning: Source file is more recent than executable.
+4905	                        mapping_query_hw_device(m, m->input_pcm);
+$1 = {
+  profile_set = 0xaaaaaab28100, 
+  name = 0xaaaaaab2c2c0 "stereo-fallback", 
+  description = 0xaaaaaab2a840 "立体声", 
+  priority = 51, 
+  direction = PA_ALSA_DIRECTION_ANY, 
+  proplist = 0xaaaaaab2c490, 
+  sample_spec = {
+    format = PA_SAMPLE_INVALID, 
+    rate = 0, 
+    channels = 0 '\000'
+  }, 
+  channel_map = {
+    channels = 2 '\002', 
+    map =       {[0] = PA_CHANNEL_POSITION_FRONT_LEFT,
+      [1] = PA_CHANNEL_POSITION_FRONT_RIGHT,
+      [2] = PA_CHANNEL_POSITION_INVALID <repeats 30 times>}
+  }, 
+  device_strings = 0xaaaaaab0f650, 
+  input_path_names = 0xaaaaaab2ca30, 
+  output_path_names = 0xaaaaaab042a0, 
+  input_element = 0x0, 
+  output_element = 0x0, 
+  input_path_set = 0x0, 
+  output_path_set = 0x0, 
+  supported = 0, 
+  exact_channels = true, 
+  fallback = true, 
+  hw_device_index = -1, 
+  input_pcm = 0xaaaaaacb4060, 
+  output_pcm = 0x0, 
+  sink = 0x0, 
+  source = 0x0, 
+  ucm_context = {
+    ucm = 0x0, 
+    direction = (unknown: 0), 
+    ucm_devices = 0x0, 
+    ucm_modifiers = 0x0
+  }
+}
+mapping_query_hw_device (mapping=0xaaaaaab2c340, pcm=0xaaaaaacb4060) at modules/alsa/alsa-mixer.c:4719
+4719	static void mapping_query_hw_device(pa_alsa_mapping *mapping, snd_pcm_t *pcm) {
+4722	    snd_pcm_info_alloca(&pcm_info);
+4724	    r = snd_pcm_info(pcm, pcm_info);
+4725	    if (r < 0) {
+$2 = <incomplete type>
+$3 = 0
+$4 = <incomplete type>
+type = struct _snd_pcm_info {
+    <incomplete type>
+} *
+4735	    mapping->hw_device_index = snd_pcm_info_get_device(pcm_info);
+4736	}
+$5 = {
+  profile_set = 0xaaaaaab28100, 
+  name = 0xaaaaaab2c2c0 "stereo-fallback", 
+  description = 0xaaaaaab2a840 "立体声", 
+  priority = 51, 
+  direction = PA_ALSA_DIRECTION_ANY, 
+  proplist = 0xaaaaaab2c490, 
+  sample_spec = {
+    format = PA_SAMPLE_INVALID, 
+    rate = 0, 
+    channels = 0 '\000'
+  }, 
+  channel_map = {
+    channels = 2 '\002', 
+    map =       {[0] = PA_CHANNEL_POSITION_FRONT_LEFT,
+      [1] = PA_CHANNEL_POSITION_FRONT_RIGHT,
+      [2] = PA_CHANNEL_POSITION_INVALID <repeats 30 times>}
+  }, 
+  device_strings = 0xaaaaaab0f650, 
+  input_path_names = 0xaaaaaab2ca30, 
+  output_path_names = 0xaaaaaab042a0, 
+  input_element = 0x0, 
+  output_element = 0x0, 
+  input_path_set = 0x0, 
+  output_path_set = 0x0, 
+  supported = 0, 
+  exact_channels = true, 
+  fallback = true, 
+  hw_device_index = 0, 
+  input_pcm = 0xaaaaaacb4060, 
+  output_pcm = 0x0, 
+  sink = 0x0, 
+  source = 0x0, 
+  ucm_context = {
+    ucm = 0x0, 
+    direction = (unknown: 0), 
+    ucm_devices = 0x0, 
+    ucm_modifiers = 0x0
+  }
+}
+#0  0x0000fffff24dd410 in mapping_query_hw_device (mapping=0xaaaaaab2c340, pcm=0xaaaaaacb4060) at modules/alsa/alsa-mixer.c:4736
+#1  0x0000fffff24ddff4 in pa_alsa_profile_set_probe (ps=0xaaaaaab28100, dev_id=0xaaaaaab12450 "0", ss=0xaaaaaaae2fec, default_n_fragments=4, default_fragment_size_msec=25)
+    at modules/alsa/alsa-mixer.c:4905
+#2  0x0000fffff268bd10 in module_alsa_card_LTX_pa__init (m=0xaaaaaab0f450) at modules/alsa/module-alsa-card.c:871
+#3  0x0000fffff7e67104 in pa_module_load
+    (module=0xffffffffcd90, c=0xaaaaaaae2ec0, name=0xfffff26a4d98 "module-alsa-card", argument=0xaaaaaaadd8b0 "device_id=\"0\" name=\"platform-PHYT0006_00\" card_name=\"alsa_card.platform-PHYT0006_00\" namereg_fail=false tsched=yes fixed_latency_range=no ignore_dB=no deferred_volume=yes use_ucm=yes card_properties=\""...) at pulsecore/module.c:187
+#4  0x0000fffff26a2d9c in verify_access (u=0xaaaaaab03700, d=0xaaaaaab071f0) at modules/module-udev-detect.c:333
+#5  0x0000fffff26a32fc in card_changed (u=0xaaaaaab03700, dev=0xaaaaaaaddc50) at modules/module-udev-detect.c:422
+#6  0x0000fffff26a36bc in process_device (u=0xaaaaaab03700, dev=0xaaaaaaaddc50) at modules/module-udev-detect.c:464
+#7  0x0000fffff26a373c in process_path (u=0xaaaaaab03700, path=0xaaaaaab18b00 "/sys/devices/platform/PHYT0006:00/sound/card0") at modules/module-udev-detect.c:481
+#8  0x0000fffff26a46ac in module_udev_detect_LTX_pa__init (m=0xaaaaaab00e20) at modules/module-udev-detect.c:789
+#9  0x0000fffff7e67104 in pa_module_load (module=0xffffffffcfe8, c=0xaaaaaaae2ec0, name=0xaaaaaab011b0 "module-udev-detect", argument=0x0) at pulsecore/module.c:187
+#10 0x0000fffff7e50170 in pa_cli_command_load (c=0xaaaaaaae2ec0, t=0xaaaaaab011d0, buf=0xaaaaaaadaf60, fail=0xaaaaaaad5505) at pulsecore/cli-command.c:437
+#11 0x0000fffff7e5774c in pa_cli_command_execute_line_stateful
+    (c=0xaaaaaaae2ec0, s=0xffffffffd1c8 "load-module module-udev-detect", buf=0xaaaaaaadaf60, fail=0xaaaaaaad5505, ifstate=0xffffffffd1c0) at pulsecore/cli-command.c:2136
+#12 0x0000fffff7e57a00 in pa_cli_command_execute_file_stream (c=0xaaaaaaae2ec0, f=0xaaaaaaad58f0, buf=0xaaaaaaadaf60, fail=0xaaaaaaad5505) at pulsecore/cli-command.c:2176
+#13 0x0000aaaaaaab90ac in main (argc=4, argv=0xffffffffdd98) at daemon/main.c:1112
+Run till exit from #0  mapping_query_hw_device (mapping=0xaaaaaab2c340, pcm=0xaaaaaacb4060) at modules/alsa/alsa-mixer.c:4736
+0x0000fffff24ddff4 in pa_alsa_profile_set_probe (ps=0xaaaaaab28100, dev_id=0xaaaaaab12450 "0", ss=0xaaaaaaae2fec, default_n_fragments=4, default_fragment_size_msec=25)
+    at modules/alsa/alsa-mixer.c:4905
+4905	                        mapping_query_hw_device(m, m->input_pcm);
+4885	                PA_IDXSET_FOREACH(m, p->input_mappings, idx) {
+Breakpoint 2 at 0xfffff24db120: file modules/alsa/alsa-mixer.c, line 4116.
+Program not restarted.
+Continuing.
+
+Breakpoint 2, mapping_paths_probe (m=0xaaaaaab2c340, profile=0xaaaaaab40880, direction=PA_ALSA_DIRECTION_INPUT, used_paths=0xaaaaaac6b950) at modules/alsa/alsa-mixer.c:4116
+4116	                                pa_alsa_direction_t direction, pa_hashmap *used_paths) {
+m = 0xaaaaaab2c340
+profile = 0xaaaaaab40880
+direction = PA_ALSA_DIRECTION_INPUT
+used_paths = 0xaaaaaac6b950
+Undefined info command: "lcoa".  Try "help info".
+p = 0x4010040140100401
+state = 0x4010040140100401
+pcm_handle = 0xffffffffcb40
+ps = 0xfffff24de13c <pa_alsa_profile_set_probe+2632>
+mixer_handle = 0xffffffffcb74
+__func__ =   "mapping_paths_probe"
+__PRETTY_FUNCTION__ =   "mapping_paths_probe"
+$6 = {
+  profile_set = 0xaaaaaab28100, 
+  name = 0xaaaaaab2c2c0 "stereo-fallback", 
+  description = 0xaaaaaab2a840 "立体声", 
+  priority = 51, 
+  direction = PA_ALSA_DIRECTION_ANY, 
+  proplist = 0xaaaaaab2c490, 
+  sample_spec = {
+    format = PA_SAMPLE_INVALID, 
+    rate = 0, 
+    channels = 0 '\000'
+  }, 
+  channel_map = {
+    channels = 2 '\002', 
+    map =       {[0] = PA_CHANNEL_POSITION_FRONT_LEFT,
+      [1] = PA_CHANNEL_POSITION_FRONT_RIGHT,
+      [2] = PA_CHANNEL_POSITION_INVALID <repeats 30 times>}
+  }, 
+  device_strings = 0xaaaaaab0f650, 
+  input_path_names = 0xaaaaaab2ca30, 
+  output_path_names = 0xaaaaaab042a0, 
+  input_element = 0x0, 
+  output_element = 0x0, 
+  input_path_set = 0x0, 
+  output_path_set = 0x0, 
+  supported = 0, 
+  exact_channels = true, 
+  fallback = true, 
+  hw_device_index = 0, 
+  input_pcm = 0xaaaaaacb4060, 
+  output_pcm = 0x0, 
+  sink = 0x0, 
+  source = 0x0, 
+  ucm_context = {
+    ucm = 0x0, 
+    direction = (unknown: 0), 
+    ucm_devices = 0x0, 
+    ucm_modifiers = 0x0
+  }
+}
+Breakpoint 3 at 0xfffff24d78c4: file modules/alsa/alsa-mixer.c, line 3184.
+Continuing.
+
+Breakpoint 3, pa_alsa_path_set_new (m=0xaaaaaab2c340, direction=PA_ALSA_DIRECTION_INPUT, paths_dir=0x0) at modules/alsa/alsa-mixer.c:3184
+3184	pa_alsa_path_set *pa_alsa_path_set_new(pa_alsa_mapping *m, pa_alsa_direction_t direction, const char *paths_dir) {
+#0  0x0000fffff24d78c4 in pa_alsa_path_set_new (m=0xaaaaaab2c340, direction=PA_ALSA_DIRECTION_INPUT, paths_dir=0x0) at modules/alsa/alsa-mixer.c:3184
+#1  0x0000fffff24db1a0 in mapping_paths_probe (m=0xaaaaaab2c340, profile=0xaaaaaab40880, direction=PA_ALSA_DIRECTION_INPUT, used_paths=0xaaaaaac6b950) at modules/alsa/alsa-mixer.c:4132
+#2  0x0000fffff24de19c in pa_alsa_profile_set_probe (ps=0xaaaaaab28100, dev_id=0xaaaaaab12450 "0", ss=0xaaaaaaae2fec, default_n_fragments=4, default_fragment_size_msec=25)
+    at modules/alsa/alsa-mixer.c:4933
+#3  0x0000fffff268bd10 in module_alsa_card_LTX_pa__init (m=0xaaaaaab0f450) at modules/alsa/module-alsa-card.c:871
+#4  0x0000fffff7e67104 in pa_module_load
+    (module=0xffffffffcd90, c=0xaaaaaaae2ec0, name=0xfffff26a4d98 "module-alsa-card", argument=0xaaaaaaadd8b0 "device_id=\"0\" name=\"platform-PHYT0006_00\" card_name=\"alsa_card.platform-PHYT0006_00\" namereg_fail=false tsched=yes fixed_latency_range=no ignore_dB=no deferred_volume=yes use_ucm=yes card_properties=\""...) at pulsecore/module.c:187
+#5  0x0000fffff26a2d9c in verify_access (u=0xaaaaaab03700, d=0xaaaaaab071f0) at modules/module-udev-detect.c:333
+#6  0x0000fffff26a32fc in card_changed (u=0xaaaaaab03700, dev=0xaaaaaaaddc50) at modules/module-udev-detect.c:422
+#7  0x0000fffff26a36bc in process_device (u=0xaaaaaab03700, dev=0xaaaaaaaddc50) at modules/module-udev-detect.c:464
+#8  0x0000fffff26a373c in process_path (u=0xaaaaaab03700, path=0xaaaaaab18b00 "/sys/devices/platform/PHYT0006:00/sound/card0") at modules/module-udev-detect.c:481
+#9  0x0000fffff26a46ac in module_udev_detect_LTX_pa__init (m=0xaaaaaab00e20) at modules/module-udev-detect.c:789
+#10 0x0000fffff7e67104 in pa_module_load (module=0xffffffffcfe8, c=0xaaaaaaae2ec0, name=0xaaaaaab011b0 "module-udev-detect", argument=0x0) at pulsecore/module.c:187
+#11 0x0000fffff7e50170 in pa_cli_command_load (c=0xaaaaaaae2ec0, t=0xaaaaaab011d0, buf=0xaaaaaaadaf60, fail=0xaaaaaaad5505) at pulsecore/cli-command.c:437
+#12 0x0000fffff7e5774c in pa_cli_command_execute_line_stateful
+    (c=0xaaaaaaae2ec0, s=0xffffffffd1c8 "load-module module-udev-detect", buf=0xaaaaaaadaf60, fail=0xaaaaaaad5505, ifstate=0xffffffffd1c0) at pulsecore/cli-command.c:2136
+#13 0x0000fffff7e57a00 in pa_cli_command_execute_file_stream (c=0xaaaaaaae2ec0, f=0xaaaaaaad58f0, buf=0xaaaaaaadaf60, fail=0xaaaaaaad5505) at pulsecore/cli-command.c:2176
+#14 0x0000aaaaaaab90ac in main (argc=4, argv=0xffffffffdd98) at daemon/main.c:1112
+Breakpoint 4 at 0xfffff268bcd0: file modules/alsa/module-alsa-card.c, line 871.
+Breakpoint 5 at 0xfffff268bcb0: file modules/alsa/module-alsa-card.c, line 868.
+Breakpoint 6 at 0xfffff268bbfc: file modules/alsa/module-alsa-card.c, line 849.
+Num     Type           Disp Enb Address            What
+1       breakpoint     keep y   0x0000fffff24ddfe0 in pa_alsa_profile_set_probe at modules/alsa/alsa-mixer.c:4905
+	breakpoint already hit 1 time
+2       breakpoint     keep y   0x0000fffff24db120 in mapping_paths_probe at modules/alsa/alsa-mixer.c:4116
+	breakpoint already hit 1 time
+3       breakpoint     keep y   0x0000fffff24d78c4 in pa_alsa_path_set_new at modules/alsa/alsa-mixer.c:3184
+	breakpoint already hit 1 time
+4       breakpoint     keep y   0x0000fffff268bcd0 in module_alsa_card_LTX_pa__init at modules/alsa/module-alsa-card.c:871
+5       breakpoint     keep y   0x0000fffff268bcb0 in module_alsa_card_LTX_pa__init at modules/alsa/module-alsa-card.c:868
+6       breakpoint     keep y   0x0000fffff268bbfc in module_alsa_card_LTX_pa__init at modules/alsa/module-alsa-card.c:849
+Traceback (most recent call last):
+  File "<string>", line 3, in <module>
+ModuleNotFoundError: No module named 'qt5printers'
+/home/uos/.gdbinit:64: Error in sourced command file:
+Error while executing Python code.
+Reading symbols from /usr/bin/pulseaudio...Reading symbols from /usr/lib/debug/.build-id/39/799b1bdd4c217c170abcc1f0e8a1e419c29575.debug...done.
+done.
+Reading symbols from /usr/bin/pulseaudio...Reading symbols from /usr/lib/debug/.build-id/39/799b1bdd4c217c170abcc1f0e8a1e419c29575.debug...done.
+done.
+No source file named src/modules/alsa/alsa-mixer.c.
+Breakpoint 1 (src/modules/alsa/alsa-mixer.c:3184) pending.
+Saved to file 'file-name-to-save'.
+No source file named src/modules/alsa/module-alsa-card.c.
+Breakpoint 2 (src/modules/alsa/module-alsa-card.c:849) pending.
+No source file named src/modules/alsa/module-alsa-card.c.
+Breakpoint 3 (src/modules/alsa/module-alsa-card.c:868) pending.
+No source file named src/modules/alsa/module-alsa-card.c.
+Breakpoint 4 (src/modules/alsa/module-alsa-card.c:871) pending.
+No source file named src/modules/alsa/alsa-mixer.c.
+Breakpoint 5 (src/modules/alsa/alsa-mixer.c:4520) pending.
+No source file named src/modules/alsa/alsa-mixer.c.
+Breakpoint 6 (src/modules/alsa/alsa-mixer.c:4577) pending.
+No source file named src/pulsecore/conf-parser.c.
+Breakpoint 7 (src/pulsecore/conf-parser.c:167) pending.
+No source file named src/pulsecore/conf-parser.c.
+Breakpoint 8 (src/pulsecore/conf-parser.c:208) pending.
+No source file named src/pulsecore/conf-parser.c.
+Breakpoint 9 (src/pulsecore/conf-parser.c:83) pending.
+No source file named src/pulsecore/conf-parser.c.
+Breakpoint 10 (src/pulsecore/conf-parser.c:157) pending.
+No source file named src/pulsecore/conf-parser.c.
+No source file named src/pulsecore/conf-parser.c.
+Breakpoint 11 (src/pulsecore/conf-parser.c:42) pending.
+No source file named src/modules/alsa/alsa-mixer.c.
+Breakpoint 12 (src/modules/alsa/alsa-mixer.c:4782) pending.
+No source file named src/modules/alsa/alsa-mixer.c.
+Breakpoint 13 (src/modules/alsa/alsa-mixer.c:4890) pending.
+No source file named src/modules/alsa/alsa-mixer.c.
+Breakpoint 14 (src/modules/alsa/alsa-mixer.c:4701) pending.
+No source file named src/modules/alsa/alsa-mixer.c.
+Breakpoint 15 (src/modules/alsa/alsa-mixer.c:4833) pending.
+No source file named src/modules/alsa/alsa-mixer.c.
+Breakpoint 16 (src/modules/alsa/alsa-mixer.c:4867) pending.
+No source file named src/modules/alsa/alsa-mixer.c.
+Breakpoint 17 (src/modules/alsa/alsa-mixer.c:4651) pending.
+No source file named src/modules/alsa/alsa-mixer.c.
+Breakpoint 18 (src/modules/alsa/alsa-mixer.c:4881) pending.
+No source file named src/modules/alsa/alsa-mixer.c.
+Breakpoint 19 (src/modules/alsa/alsa-mixer.c:4719) pending.
+No source file named src/modules/alsa/alsa-mixer.c.
+Breakpoint 20 (src/modules/alsa/alsa-mixer.c:4923) pending.
+No source file named src/modules/alsa/alsa-mixer.c.
+Breakpoint 21 (src/modules/alsa/alsa-mixer.c:4115) pending.
+No source file named src/modules/alsa/alsa-mixer.c.
+Breakpoint 22 (src/modules/alsa/alsa-mixer.c:4127) pending.
+No source file named src/modules/alsa/alsa-mixer.c.
+Breakpoint 23 (src/modules/alsa/alsa-mixer.c:4141) pending.
+No source file named src/modules/alsa/alsa-mixer.c.
+Breakpoint 24 (src/modules/alsa/alsa-mixer.c:4156) pending.
+No source file named src/modules/alsa/alsa-mixer.c.
+Breakpoint 25 (src/modules/alsa/alsa-mixer.c:3478) pending.
+Saved to file 'file-name-to-save'.
