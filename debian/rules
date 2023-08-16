@@ -9,7 +9,7 @@ DEB_BUILD_MAINT_OPTIONS = hardening=+all
 DEB_BUILD_OPTIONS = nocheck
 
 DEB_CFLAGS_MAINT_APPEND = -fstack-protector-strong -D_FORTITY_SOURCE=1 \
--z noexecstack -pie -fPIC -z lazy
+-z noexecstack -pie -fPIC -z lazy -g -O0
 
 include /usr/share/dpkg/default.mk
 
