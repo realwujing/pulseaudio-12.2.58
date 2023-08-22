@@ -93,6 +93,9 @@ ATTRS{vendor}=="0x0014", ATTRS{device}=="0x7a07", ENV{PULSE_PROFILE_SET}="loongs
 # NM14KG-326
 ATTRS{subsystem_vendor}=="0x1d17", ATTRS{subsystem_device}=="0x3288", ENV{PULSE_CUST_PATH_SET}="1d17-3288"
 
+# Disable Mic Boost when using internal speaker on Realtek sound card.
+ATTRS{subsystem_vendor}=="0x10ec", ENV{PULSE_CUST_PATH_SET}="10ec"
+
 # NM14KG-326-Desktop-computer
 ATTRS{subsystem_vendor}=="0x10ec", ATTRS{subsystem_device}=="0x129e", ENV{PULSE_CUST_PATH_SET}="10ec-129e"
 
